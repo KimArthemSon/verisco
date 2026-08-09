@@ -26,6 +26,7 @@ export default function TabLayout() {
         name="reports"
         options={{ title: 'Reports', tabBarIcon: ({ color, size }) => <ChartColumn size={size} color={color} /> }}
       />
+     
     </Tabs>
   );
 }
