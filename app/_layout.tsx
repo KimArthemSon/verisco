@@ -1,59 +1,57 @@
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
+import { getDb } from '@core/db';
+import { Loader } from '@core/ui/Loader';
+import { ThemeProvider, useTheme } from '@core/ui/theme';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState, type ReactNode } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { useColorScheme } from '@/components/useColorScheme';
+const queryClient = new QueryClient();
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
-
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-    ...FontAwesome.font,
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
-
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
-
-  if (!loaded) {
-    return null;
-  }
-
-  return <RootLayoutNav />;
+function ThemedStatusBar() {
+  const { mode } = useTheme();
+  return <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />;
 }
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+/** Holds the branded loader until DB is ready (+1s minimum), then fades it out. */
+function Boot({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
+  const [showLoader, setShowLoader] = useState(true);
+
+  useEffect(() => {
+    SplashScreen.hideAsync();
+    const minimum = new Promise((r) => setTimeout(r, 1000));
+    Promise.all([getDb(), minimum])
+      .then(() => setReady(true))
+      .catch(() => setReady(true)); // never trap the user on the loader
+  }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
-    </ThemeProvider>
+    <>
+      {children}
+      {showLoader && <Loader done={ready} onHidden={() => setShowLoader(false)} />}
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <ThemedStatusBar />
+          <Boot>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+          </Boot>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
