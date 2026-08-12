@@ -1,5 +1,8 @@
+import { PillButton } from "@core/ui/PillButton";
+import { ProgressRing } from "@core/ui/ProgressRing";
 import { palette, useTheme } from "@core/ui/theme";
 import { daysBetween, todayISO } from "@core/utils/dates";
+import { SessionPreviewModal } from "@modules/home/SessionPreviewModal";
 import type { Journey } from "@modules/journeys/repository";
 import type { ActiveSession } from "@modules/session-player/repository";
 import {
@@ -8,14 +11,9 @@ import {
   useTodayWorkouts,
 } from "@modules/session-player/useSessionPlayer";
 import { useRouter } from "expo-router";
-import {
-  ChevronRight,
-  Dumbbell,
-  Lightbulb,
-  Map,
-  Play,
-} from "lucide-react-native";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { ChevronRight, Dumbbell, Lightbulb, Play } from "lucide-react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 export function HelperCard() {
   const { colors } = useTheme();
@@ -37,21 +35,14 @@ export function HelperCard() {
 
 export function ResumeSessionCard({ session }: { session: ActiveSession }) {
   const router = useRouter();
+
   return (
-    <Pressable
+    <PillButton
+      label={`Resume: ${session.workout_name}`}
+      icon={Play}
+      variant="primary"
       onPress={() => router.push(`/session/${session.id}`)}
-      style={styles.resume}
-    >
-      <View style={styles.resumeIcon}>
-        <Play size={18} color={palette.green} />
-      </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={styles.resumeTitle}>Resume: {session.workout_name}</Text>
-        <Text style={styles.resumeSub}>
-          session in progress — tap to continue
-        </Text>
-      </View>
-    </Pressable>
+    />
   );
 }
 
@@ -71,29 +62,39 @@ export function PinnedJourneyCard({
   const { data: activeSession } = useActiveSession();
   const { data: todayWorkoutIds } = useTodayWorkouts(journey.id);
   const startSession = useStartSession();
+  const [previewWorkoutId, setPreviewWorkoutId] = useState<number | null>(null);
 
   const dayX = Math.max(1, daysBetween(journey.start_date, todayISO()) + 1);
   const total = journey.end_date
     ? daysBetween(journey.start_date, journey.end_date) + 1
     : null;
   const hasWorkouts = workoutCount > 0;
-  const hasTodayWorkout = todayWorkoutIds && todayWorkoutIds.length > 0;
+  const hasTodayWorkout = !!todayWorkoutIds && todayWorkoutIds.length > 0;
+  const progress = total && total > 1 ? (dayX - 1) / (total - 1) : 0;
 
   const handlePlay = () => {
-    // Resume first if a session is in progress
     if (activeSession) {
       router.push(`/session/${activeSession.id}`);
       return;
     }
-    // No workouts yet → go to create
     if (!hasWorkouts || !nextWorkoutId) {
       router.push(`/workout/create?journeyId=${journey.id}`);
       return;
     }
-    // Start a new session for the next workout
+    setPreviewWorkoutId(nextWorkoutId);
+  };
+
+  const confirmPlay = () => {
+    if (!previewWorkoutId) return;
     startSession.mutate(
-      { workoutId: nextWorkoutId, journeyId: journey.id },
-      { onSuccess: (sessionId) => router.push(`/session/${sessionId}`) },
+      { workoutId: previewWorkoutId, journeyId: journey.id },
+      {
+        onSuccess: (sessionId) => {
+          setPreviewWorkoutId(null);
+          router.push(`/session/${sessionId}`);
+        },
+        onSettled: () => setPreviewWorkoutId(null),
+      },
     );
   };
 
@@ -103,8 +104,6 @@ export function PinnedJourneyCard({
       ? `Resume: ${activeSession.workout_name}`
       : "Play Session";
 
-  const ButtonIcon = hasWorkouts ? Play : Dumbbell;
-
   const subtitleNext = hasTodayWorkout
     ? ` • Today: ${nextWorkoutName}`
     : hasWorkouts && nextWorkoutName
@@ -113,21 +112,24 @@ export function PinnedJourneyCard({
 
   return (
     <View style={[styles.pinned, { backgroundColor: colors.surface }]}>
-      {/* top row → journey detail */}
       <Pressable
         onPress={() => router.push(`/journey/${journey.id}`)}
         style={styles.cardTop}
       >
-        {journey.before_photo_uri ? (
-          <Image
-            source={{ uri: journey.before_photo_uri }}
-            style={styles.thumb}
-          />
-        ) : (
-          <View style={[styles.thumb, { backgroundColor: colors.border }]}>
-            <Map size={20} color={palette.green} />
-          </View>
-        )}
+        <ProgressRing
+          size={54}
+          stroke={5}
+          progress={Math.min(1, Math.max(0, progress))}
+          color={colors.accent}
+        >
+          <Text style={[styles.ringValue, { color: colors.accent }]}>
+            {dayX}
+          </Text>
+          <Text style={[styles.ringSub, { color: colors.subtext }]}>
+            {total ? `of ${total}` : "day"}
+          </Text>
+        </ProgressRing>
+
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[styles.title, { color: colors.text }]}>
             {journey.name}
@@ -145,11 +147,19 @@ export function PinnedJourneyCard({
         <ChevronRight size={18} color={colors.subtext} />
       </Pressable>
 
-      {/* state-aware action */}
-      <Pressable onPress={handlePlay} style={styles.actionBtn}>
-        <ButtonIcon size={18} color="#FFFFFF" />
-        <Text style={styles.actionText}>{buttonLabel}</Text>
-      </Pressable>
+      <PillButton
+        label={buttonLabel}
+        icon={!hasWorkouts ? Dumbbell : Play}
+        variant="primary"
+        onPress={handlePlay}
+      />
+
+      <SessionPreviewModal
+        open={previewWorkoutId !== null}
+        workoutId={previewWorkoutId ?? 0}
+        onClose={() => setPreviewWorkoutId(null)}
+        onConfirm={confirmPlay}
+      />
     </View>
   );
 }
@@ -159,21 +169,27 @@ export function JourneyRow({ journey }: { journey: Journey }) {
   const router = useRouter();
   const active = journey.status === "active";
 
+  const dayX = Math.max(1, daysBetween(journey.start_date, todayISO()) + 1);
+  const total = journey.end_date
+    ? daysBetween(journey.start_date, journey.end_date) + 1
+    : null;
+  const progress =
+    total && total > 1 ? Math.min(1, Math.max(0, (dayX - 1) / (total - 1))) : 0;
+
   return (
     <Pressable
       onPress={() => router.push(`/journey/${journey.id}`)}
       style={[styles.card, { backgroundColor: colors.surface }]}
     >
-      {journey.before_photo_uri ? (
-        <Image
-          source={{ uri: journey.before_photo_uri }}
-          style={styles.thumbSm}
-        />
-      ) : (
-        <View style={[styles.thumbSm, { backgroundColor: colors.border }]}>
-          <Map size={16} color={palette.green} />
-        </View>
-      )}
+      <ProgressRing
+        size={40}
+        stroke={4}
+        progress={progress}
+        color={colors.accent}
+      >
+        <Text style={[styles.ringMini, { color: colors.accent }]}>{dayX}</Text>
+      </ProgressRing>
+
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={[styles.title, { color: colors.text }]}>
           {journey.name}
@@ -185,13 +201,13 @@ export function JourneyRow({ journey }: { journey: Journey }) {
       <View
         style={[
           styles.chip,
-          { backgroundColor: active ? palette.green + "22" : colors.border },
+          { backgroundColor: active ? colors.accent + "22" : colors.border },
         ]}
       >
         <Text
           style={[
             styles.chipText,
-            { color: active ? palette.green : colors.subtext },
+            { color: active ? colors.accent : colors.subtext },
           ]}
         >
           {journey.status}
@@ -207,60 +223,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  pinned: { borderRadius: 16, padding: 16, gap: 12 },
+  pinned: {
+    borderRadius: 20,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
   cardTop: { flexDirection: "row", alignItems: "center", gap: 14 },
   title: { fontSize: 15, fontWeight: "600" },
   sub: { fontSize: 12 },
-  thumb: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  thumbSm: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: palette.green,
-    borderRadius: 12,
-    paddingVertical: 13,
-  },
-  actionText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 14,
-    letterSpacing: 0.5,
-  },
-  resume: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    backgroundColor: palette.green,
-    borderRadius: 16,
-    padding: 16,
-  },
-  resumeIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  resumeTitle: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
-  resumeSub: { color: "#FFFFFFBB", fontSize: 12 },
+  ringValue: { fontSize: 12, fontWeight: "700" },
+  ringSub: { fontSize: 8, fontWeight: "600", letterSpacing: 0.3 },
+  ringMini: { fontSize: 10, fontWeight: "700" },
   chip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   chipText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
 });

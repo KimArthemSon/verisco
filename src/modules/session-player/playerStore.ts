@@ -1,6 +1,6 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
-type View = 'overview' | 'playing' | 'resting' | 'summary';
+type View = "overview" | "playing" | "resting" | "summary";
 
 type PlayerState = {
   view: View;
@@ -8,6 +8,7 @@ type PlayerState = {
   currentSetIndex: number;
   restSeconds: number;
   timerRunning: boolean;
+  soundOn: boolean;
 
   setView: (view: View) => void;
   setIndices: (exIdx: number, setIdx: number) => void;
@@ -16,21 +17,25 @@ type PlayerState = {
   stopRest: () => void;
   addTime: (seconds: number) => void;
   setTimerRunning: (running: boolean) => void;
+  toggleSound: () => void;
   showSummary: () => void;
   reset: () => void;
 };
 
 export const usePlayerStore = create<PlayerState>((set) => ({
-  view: 'overview',
+  view: "overview",
   currentExerciseIndex: 0,
   currentSetIndex: 0,
   restSeconds: 0,
   timerRunning: false,
+  soundOn: true,
 
   setView: (view) => set({ view }),
-  setIndices: (exIdx, setIdx) => set({ currentExerciseIndex: exIdx, currentSetIndex: setIdx }),
+  setIndices: (exIdx, setIdx) =>
+    set({ currentExerciseIndex: exIdx, currentSetIndex: setIdx }),
 
-  startRest: (seconds) => set({ restSeconds: seconds, timerRunning: true, view: 'resting' }),
+  startRest: (seconds) =>
+    set({ restSeconds: seconds, timerRunning: true, view: "resting" }),
 
   tickRest: () =>
     set((s) => {
@@ -38,18 +43,21 @@ export const usePlayerStore = create<PlayerState>((set) => ({
       return { restSeconds: s.restSeconds - 1 };
     }),
 
-  stopRest: () => set({ timerRunning: false, view: 'playing' }),
-  addTime: (s) => set((st) => ({ restSeconds: st.restSeconds + s })),
+  stopRest: () => set({ timerRunning: false, view: "playing" }),
+  addTime: (seconds) =>
+    set((state) => ({ restSeconds: state.restSeconds + seconds })),
   setTimerRunning: (running) => set({ timerRunning: running }),
+  toggleSound: () => set((state) => ({ soundOn: !state.soundOn })),
 
-  showSummary: () => set({ view: 'summary', timerRunning: false }),
+  showSummary: () => set({ view: "summary", timerRunning: false }),
 
   reset: () =>
     set({
-      view: 'overview',
+      view: "overview",
       currentExerciseIndex: 0,
       currentSetIndex: 0,
       restSeconds: 0,
       timerRunning: false,
+      soundOn: true,
     }),
 }));

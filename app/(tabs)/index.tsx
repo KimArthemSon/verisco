@@ -1,6 +1,6 @@
 import { Carousel, type Slide } from "@core/ui/Carousel";
 import { Header } from "@core/ui/Header";
-import { palette, useTheme } from "@core/ui/theme";
+import { useTheme } from "@core/ui/theme";
 import {
   HelperCard,
   JourneyRow,
@@ -11,31 +11,73 @@ import { useJourneys } from "@modules/journeys/useJourneys";
 import { useActiveSession } from "@modules/session-player/useActiveSession";
 import { useWorkoutsByJourney } from "@modules/workouts/useWorkouts";
 import { useRouter } from "expo-router";
-import { Plus } from "lucide-react-native";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Search } from "lucide-react-native";
+import { useRef } from "react";
+import {
+  Animated,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 // Internet images for now. To go fully offline later, replace with:
 // require('@/assets/images/carousel/c1.png') etc.
 const slides: Slide[] = [
   {
-    image: {
-      uri: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1600&auto=format&fit=crop",
-    },
+    image: require("@/assets/images/carousel-1.jpg"),
     quote: "grow strong.",
   },
   {
-    image: {
-      uri: "https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?q=80&w=1600&auto=format&fit=crop",
-    },
+    image: require("@/assets/images/carousel-2.jpg"),
     quote: "one journey at a time.",
   },
   {
-    image: {
-      uri: "https://images.unsplash.com/photo-1571902943202-507ec2618e8b?q=80&w=1600&auto=format&fit=crop",
-    },
+    image: require("@/assets/images/carousel-3.jpg"),
     quote: "document your transformation.",
   },
 ];
+
+function ScalePressable({
+  onPress,
+  children,
+  style,
+}: {
+  onPress?: () => void;
+  children: React.ReactNode;
+  style?: any;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  return (
+    <Animated.View
+      style={[{ transform: [{ scale }] }, style]}
+      pointerEvents="box-none"
+    >
+      <Pressable
+        onPress={onPress}
+        onPressIn={() =>
+          Animated.timing(scale, {
+            toValue: 0.96,
+            duration: 100,
+            useNativeDriver: true,
+          }).start()
+        }
+        onPressOut={() =>
+          Animated.timing(scale, {
+            toValue: 1,
+            duration: 100,
+            useNativeDriver: true,
+          }).start()
+        }
+        style={StyleSheet.flatten([{ width: "100%", height: "100%" }, style])}
+      >
+        <View style={styles.searchInner}>{children}</View>
+      </Pressable>
+    </Animated.View>
+  );
+}
 
 export default function HomeScreen() {
   const { colors } = useTheme();
@@ -52,27 +94,42 @@ export default function HomeScreen() {
       <Header />
 
       <ScrollView contentContainerStyle={styles.content}>
-        <Carousel slides={slides} />
-
-        <Pressable
-          style={styles.createBtn}
-          onPress={() => router.push("/journey/create")}
+        <ScalePressable
+          onPress={() => router.push("/search")}
+          style={[
+            styles.searchTrigger,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
         >
-          <Plus size={20} color="#FFFFFF" />
-          <Text style={styles.createText}>Create Journey</Text>
-        </Pressable>
+          <View style={styles.searchInner}>
+            <Search size={18} color={colors.subtext} />
+            <Text style={[styles.searchText, { color: colors.subtext }]}>
+              Search journeys…
+            </Text>
+          </View>
+        </ScalePressable>
+
+        <Carousel slides={slides} />
 
         {activeSession && <ResumeSessionCard session={activeSession} />}
 
         {!hasJourneys && <HelperCard />}
 
         {pinned && (
-          <PinnedJourneyCard
-            journey={pinned}
-            workoutCount={pinnedWorkouts?.length ?? 0}
-            nextWorkoutName={pinnedWorkouts?.[0]?.name}
-            nextWorkoutId={pinnedWorkouts?.[0]?.id}
-          />
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Current Journey
+            </Text>
+            <PinnedJourneyCard
+              journey={pinned}
+              workoutCount={pinnedWorkouts?.length ?? 0}
+              nextWorkoutName={pinnedWorkouts?.[0]?.name}
+              nextWorkoutId={pinnedWorkouts?.[0]?.id}
+            />
+          </>
         )}
 
         {hasJourneys && (
@@ -93,20 +150,22 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { padding: 20, gap: 14, paddingBottom: 32 },
-  createBtn: {
+  searchTrigger: {
+    height: 52,
+    borderRadius: 999,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  searchInner: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: palette.green,
-    borderRadius: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 18,
+    gap: 10,
   },
-  createText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 15,
-    letterSpacing: 0.5,
+  searchText: {
+    fontSize: 14,
+    fontWeight: "500",
   },
   sectionTitle: { fontSize: 17, fontWeight: "700", marginTop: 6 },
 });

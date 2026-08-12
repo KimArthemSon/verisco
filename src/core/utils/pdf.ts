@@ -1,30 +1,44 @@
-import { daysBetween, todayISO } from '@core/utils/dates';
-import type { Journey } from '@modules/journeys/repository';
-import type { CertificateStats } from '@modules/reports/analytics';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+import { daysBetween, todayISO } from "@core/utils/dates";
+import type { Journey } from "@modules/journeys/repository";
+import type { CertificateStats } from "@modules/reports/analytics";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 
 /** Deterministic unique certificate ID per journey */
 export function certId(journey: Journey): string {
   const seed = `${journey.id}-${journey.created_at}`;
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-  const chunk = Math.abs(h).toString(36).toUpperCase().padStart(6, '0').slice(0, 6);
-  return `VIR-${journey.start_date.slice(0, 4)}-${String(journey.id).padStart(4, '0')}-${chunk}`;
+  const chunk = Math.abs(h)
+    .toString(36)
+    .toUpperCase()
+    .padStart(6, "0")
+    .slice(0, 6);
+  return `VIR-${journey.start_date.slice(0, 4)}-${String(journey.id).padStart(4, "0")}-${chunk}`;
 }
 
 async function toBase64(uri: string | null): Promise<string | null> {
   if (!uri) return null;
   try {
-    const b64 = await FileSystem.readAsBase64Async(uri);
+    const b64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
     return `data:image/jpeg;base64,${b64}`;
   } catch {
     return null;
   }
 }
 
-const fmt = (iso: string | null) => (iso ? iso.slice(0, 10) : '—');
+const fmt = (iso: string | null) => (iso ? iso.slice(0, 10) : "—");
+
+const escapeHtml = (value: string | null): string =>
+  (value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 
 export function buildCertificateHtml(
   journey: Journey,
@@ -32,7 +46,7 @@ export function buildCertificateHtml(
   before: string | null,
   after: string | null,
 ): string {
-  const completed = journey.status === 'completed';
+  const completed = journey.status === "completed";
   const dayX = Math.max(1, daysBetween(journey.start_date, todayISO()) + 1);
   const max = Math.max(...stats.weekly.map((w) => w.value), 1);
 
@@ -46,12 +60,17 @@ export function buildCertificateHtml(
                 Math.round((w.value / max) * 100),
               )}%"></div><span>${w.label}</span></div>`,
           )
-          .join('')
+          .join("")
       : '<span class="muted">no sessions yet</span>';
 
   const prRows =
     stats.prs.length > 0
-      ? stats.prs.map((p) => `<li><b>${p.exercise_name}</b> — ${p.weight} kg × ${p.reps}</li>`).join('')
+      ? stats.prs
+          .map(
+            (p) =>
+              `<li><b>${p.exercise_name}</b> — ${p.weight} kg × ${p.reps}</li>`,
+          )
+          .join("")
       : '<li class="muted">no records yet</li>';
 
   const photos = `
@@ -65,6 +84,14 @@ export function buildCertificateHtml(
         <span>AFTER</span>
       </div>
     </div>`;
+
+  const reflection =
+    journey.completion_note && journey.completion_note.trim().length > 0
+      ? `
+        <div class="sec">FINAL REFLECTION</div>
+        <div class="reflection">“${escapeHtml(journey.completion_note.trim())}”</div>
+      `
+      : "";
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8" />
   <style>
@@ -81,13 +108,14 @@ export function buildCertificateHtml(
     .dates { font-size: 12px; color: #8A8A8A; text-align: center; margin-top: 8px; }
     .stamp { display: block; width: fit-content; margin: 12px auto 0; padding: 5px 14px; border-radius: 20px;
              font-size: 11px; font-weight: 800; letter-spacing: 1px;
-             background: ${completed ? '#2D5F3F22' : '#8A8A8A22'}; color: ${completed ? '#2D5F3F' : '#8A8A8A'}; }
+             background: ${completed ? "#2D5F3F22" : "#8A8A8A22"}; color: ${completed ? "#2D5F3F" : "#8A8A8A"}; }
     .photos { display: flex; gap: 14px; margin: 20px 0; }
     .photoBox { flex: 1; text-align: center; }
     .photoBox img, .noPhoto { width: 100%; height: 190px; object-fit: cover; border-radius: 14px; }
     .noPhoto { background: #F5F5F0; display: flex; align-items: center; justify-content: center; color: #8A8A8A; font-size: 12px; }
     .photoBox span { font-size: 10px; font-weight: 800; letter-spacing: 2px; color: #2D5F3F; }
     .sec { font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #2D5F3F; margin: 18px 0 8px; }
+    .reflection { font-size: 15px; font-style: italic; color: #1A1A1A; line-height: 1.6; padding: 12px 14px; border-left: 3px solid #2D5F3F; background: #F5F5F0; border-radius: 12px; }
     .chart { display: flex; align-items: flex-end; gap: 8px; height: 110px; padding: 8px 4px 0; }
     .barCol { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
     .bar { width: 100%; background: #2D5F3F; border-radius: 4px 4px 0 0; }
@@ -111,23 +139,24 @@ export function buildCertificateHtml(
     </div>
     <div class="body">
       <div class="jName">${journey.name}</div>
-      ${journey.purpose_quote ? `<div class="quote">“${journey.purpose_quote}”</div>` : ''}
+      ${journey.purpose_quote ? `<div class="quote">“${escapeHtml(journey.purpose_quote)}”</div>` : ""}
       <div class="dates">${fmt(journey.start_date)} → ${fmt(journey.end_date)}</div>
-      <span class="stamp">${completed ? 'COMPLETED ✅' : `IN PROGRESS • DAY ${dayX}`}</span>
+      <span class="stamp">${completed ? "COMPLETED ✅" : `IN PROGRESS • DAY ${dayX}`}</span>
       ${photos}
+      ${reflection}
       <div class="sec">PROGRESS — WEEKLY VOLUME</div>
       <div class="chart">${bars}</div>
       <div class="sec">STATS</div>
       <div class="stats">
         <div class="stat"><b>${stats.sessionsCount}</b><span>SESSIONS</span></div>
-        <div class="stat"><b>${stats.consistency !== null ? stats.consistency + '%' : '—'}</b><span>CONSISTENCY</span></div>
+        <div class="stat"><b>${stats.consistency !== null ? stats.consistency + "%" : "—"}</b><span>CONSISTENCY</span></div>
         <div class="stat"><b>${stats.volume.toLocaleString()} kg</b><span>TOTAL VOLUME</span></div>
         <div class="stat"><b>${stats.setsDone}</b><span>SETS DONE</span></div>
       </div>
       <div class="sec">PERSONAL RECORDS</div>
       <ul>${prRows}</ul>
       <div class="sec">WORKOUTS</div>
-      <div class="workouts">${stats.workouts.length ? stats.workouts.join(' • ') : '—'}</div>
+      <div class="workouts">${stats.workouts.length ? stats.workouts.join(" • ") : "—"}</div>
     </div>
     <div class="foot">
       <span>Verified by Viresco 🌿</span>
@@ -137,13 +166,16 @@ export function buildCertificateHtml(
   </body></html>`;
 }
 
-export async function exportCertificate(journey: Journey, stats: CertificateStats): Promise<void> {
+export async function exportCertificate(
+  journey: Journey,
+  stats: CertificateStats,
+): Promise<void> {
   const before = await toBase64(journey.before_photo_uri);
   const after = await toBase64(journey.after_photo_uri);
   const html = buildCertificateHtml(journey, stats, before, after);
   const { uri } = await Print.printToFileAsync({ html });
   await Sharing.shareAsync(uri, {
-    mimeType: 'application/pdf',
+    mimeType: "application/pdf",
     dialogTitle: `${journey.name} — Viresco Certificate`,
   });
 }

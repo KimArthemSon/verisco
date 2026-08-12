@@ -1,6 +1,7 @@
 import { palette, useTheme } from "@core/ui/theme";
 import { useAllSessions } from "@modules/session-player/useSessionPlayer";
-import { Clock, X } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { ChevronRight, Clock, X } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Calendar } from "react-native-calendars";
@@ -9,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function CalendarScreen() {
   const insets = useSafeAreaInsets();
   const { colors, mode } = useTheme();
+  const router = useRouter();
   const { data: sessions } = useAllSessions();
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -88,12 +90,10 @@ export default function CalendarScreen() {
             backgroundColor: colors.bg,
             calendarBackground: colors.bg,
             textSectionTitleColor: colors.subtext,
-            textDayColor: colors.text,
-            textMonthColor: colors.text,
-            textDayHeaderColor: colors.subtext,
             monthTextColor: colors.text,
             todayTextColor: palette.green,
             textDisabledColor: colors.border,
+            dayTextColor: colors.text,
           }}
         />
 
@@ -141,8 +141,9 @@ export default function CalendarScreen() {
             const done = s.status === "completed";
             const aborted = s.status === "aborted";
             return (
-              <View
+              <Pressable
                 key={s.id}
+                onPress={() => router.push(`/session/${s.id}`)}
                 style={[styles.historyRow, { backgroundColor: colors.surface }]}
               >
                 <Clock size={16} color={colors.subtext} />
@@ -185,7 +186,8 @@ export default function CalendarScreen() {
                     {s.status}
                   </Text>
                 </View>
-              </View>
+                <ChevronRight size={16} color={colors.subtext} />
+              </Pressable>
             );
           })}
         </View>

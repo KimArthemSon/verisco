@@ -8,6 +8,7 @@ export type Journey = {
   before_photo_uri: string | null;
   after_photo_uri: string | null;
   purpose_quote: string | null;
+  completion_note: string | null;
   status: "active" | "completed";
   created_at: string;
 };
@@ -17,7 +18,9 @@ export type JourneyInput = {
   start_date: string;
   end_date?: string | null;
   before_photo_uri?: string | null;
+  after_photo_uri?: string | null;
   purpose_quote?: string | null;
+  completion_note?: string | null;
 };
 
 export async function getJourneys(): Promise<Journey[]> {
@@ -54,20 +57,25 @@ export async function updateJourney(
 ) {
   const db = await getDb();
   const fields: string[] = [];
-  const params: unknown[] = [];
+  const params: Array<string | number | null> = [];
   const keys = [
     "name",
     "start_date",
     "end_date",
     "before_photo_uri",
+    "after_photo_uri",
     "purpose_quote",
+    "completion_note",
     "status",
   ] as const;
 
   for (const k of keys) {
     if (k in patch) {
+      const value = (patch as Record<string, unknown>)[k];
       fields.push(`${k} = ?`);
-      params.push((patch as Record<string, unknown>)[k] ?? null);
+      params.push(
+        typeof value === "string" || typeof value === "number" ? value : null,
+      );
     }
   }
   if (fields.length === 0) return;

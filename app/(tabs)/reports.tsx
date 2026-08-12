@@ -1,25 +1,22 @@
 import { palette, useTheme } from "@core/ui/theme";
-import { daysBetween, todayISO } from "@core/utils/dates";
-import { exportCertificate } from "@core/utils/pdf";
+import { useFocusRefresh, usePullRefresh } from "@core/ui/usePullRefresh";
 import { useJourneys } from "@modules/journeys/useJourneys";
 import {
-  buildStats,
+  daysTrained,
   getReportSessions,
   inLastDays,
-  personalRecords,
-  scheduledOccurrences,
+  journeyRollups,
   totals,
   weeklyVolume,
 } from "@modules/reports/analytics";
-import { getWorkoutsByJourney } from "@modules/workouts/repository";
-import { useAllSchedules } from "@modules/workouts/useSchedules";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Trophy } from "lucide-react-native";
-import { useState } from "react";
+import { useRouter } from "expo-router";
+import { ChevronRight, Map } from "lucide-react-native";
+import { useMemo } from "react";
 import {
-  ActivityIndicator,
-  Alert,
+  Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -28,163 +25,128 @@ import {
 import { LineChart } from "react-native-gifted-charts";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const PERIODS = [
-  { label: "W", days: 7 },
-  { label: "M", days: 30 },
-  { label: "3M", days: 90 },
-  { label: "Y", days: 365 },
-];
-
 export default function ReportsScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { data: journeys } = useJourneys();
-  const { data: allSchedules } = useAllSchedules();
+  const router = useRouter();
 
-  const [journeyId, setJourneyId] = useState<number | null>(null);
-  const [period, setPeriod] = useState(30);
-  const [exporting, setExporting] = useState(false);
-
-  const selectedJourney = journeys?.find((j) => j.id === journeyId) ?? null;
-
-  const { data: sessions } = useQuery({
-    queryKey: ["reports", journeyId],
-    queryFn: () => getReportSessions(journeyId),
+  const journeysQuery = useJourneys();
+  const allReportsQuery = useQuery({
+    queryKey: ["reports", "all"],
+    queryFn: () => getReportSessions(null),
   });
 
-  const scoped = inLastDays(sessions ?? [], period);
-  const t = totals(scoped);
-  const weekly = weeklyVolume(scoped);
-  const prs = personalRecords(scoped).slice(0, 5);
+  const allSessions = allReportsQuery.data ?? [];
+  const journeys = journeysQuery.data ?? [];
 
-  const consistency = (() => {
-    if (!selectedJourney || !allSchedules) return null;
-    const occ = scheduledOccurrences(
-      allSchedules.filter((s) => true), // filtered below when journey selected
-      period,
-    );
-    return occ > 0 ? Math.min(100, Math.round((t.sessions / occ) * 100)) : null;
-  })();
+  const orderedJourneys = useMemo(
+    () =>
+      [...journeys].sort((a, b) => {
+        const activeA = a.status === "active" ? 1 : 0;
+        const activeB = b.status === "active" ? 1 : 0;
+        return activeB - activeA;
+      }),
+    [journeys],
+  );
 
-  const handleExport = async () => {
-    if (!selectedJourney) {
-      return Alert.alert(
-        "Select a journey",
-        "Pick a journey chip above to export its certificate.",
-      );
-    }
-    setExporting(true);
-    try {
-      const all = await getReportSessions(selectedJourney.id);
-      const workouts = await getWorkoutsByJourney(selectedJourney.id);
-      const ids = new Set(workouts.map((w) => w.id));
-      const scheds = (allSchedules ?? []).filter((s) => ids.has(s.workout_id));
-      const days = Math.max(
-        1,
-        daysBetween(selectedJourney.start_date, todayISO()) + 1,
-      );
-      await exportCertificate(selectedJourney, buildStats(all, scheds, days));
-    } catch (e) {
-      Alert.alert("Export failed", String(e));
-    }
-    setExporting(false);
+  const journeyStats = useMemo(
+    () =>
+      journeyRollups(allSessions).reduce<
+        Record<number, { sessions: number; sets: number; volume: number }>
+      >((acc, item) => {
+        acc[item.journey_id] = {
+          sessions: item.sessions,
+          sets: item.sets,
+          volume: item.volume,
+        };
+        return acc;
+      }, {}),
+    [allSessions],
+  );
+
+  const refreshAll = async () => {
+    await Promise.all([journeysQuery.refetch(), allReportsQuery.refetch()]);
   };
+
+  const { refreshing, onRefresh } = usePullRefresh(refreshAll);
+  useFocusRefresh(refreshAll);
+
+  const overall = totals(allSessions);
+  const overallDays = daysTrained(allSessions);
+  const chartData = weeklyVolume(inLastDays(allSessions, 84));
 
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]}>
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 8 }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={palette.green}
+            colors={[palette.green]}
+          />
+        }
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + 8 }]}
       >
         <Text style={[styles.title, { color: colors.text }]}>Reports</Text>
 
-        {/* Journey chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginTop: 4 }}
-          contentContainerStyle={styles.chipRow}
-        >
-          <Pressable
-            onPress={() => setJourneyId(null)}
-            style={[
-              styles.chip,
-              {
-                backgroundColor:
-                  journeyId === null ? palette.green : colors.surface,
-              },
-            ]}
+        <View style={styles.metricGrid}>
+          <View
+            style={[styles.metricCard, { backgroundColor: colors.surface }]}
           >
-            <Text
-              style={[
-                styles.chipText,
-                { color: journeyId === null ? "#FFFFFF" : colors.text },
-              ]}
-            >
-              All
+            <Text style={[styles.metricLabel, { color: colors.subtext }]}>
+              workouts
             </Text>
-          </Pressable>
-          {(journeys ?? []).map((j) => (
-            <Pressable
-              key={j.id}
-              onPress={() => setJourneyId(j.id)}
-              style={[
-                styles.chip,
-                {
-                  backgroundColor:
-                    journeyId === j.id ? palette.green : colors.surface,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  { color: journeyId === j.id ? "#FFFFFF" : colors.text },
-                ]}
-              >
-                {j.name}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {/* Period chips */}
-        <View style={styles.chipRow}>
-          {PERIODS.map((p) => (
-            <Pressable
-              key={p.label}
-              onPress={() => setPeriod(p.days)}
-              style={[
-                styles.chip,
-                {
-                  backgroundColor:
-                    period === p.days ? palette.green : colors.surface,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  { color: period === p.days ? "#FFFFFF" : colors.text },
-                ]}
-              >
-                {p.label}
-              </Text>
-            </Pressable>
-          ))}
+            <Text style={[styles.metricValue, { color: colors.text }]}>
+              {overall.sessions}
+            </Text>
+          </View>
+          <View
+            style={[styles.metricCard, { backgroundColor: colors.surface }]}
+          >
+            <Text style={[styles.metricLabel, { color: colors.subtext }]}>
+              days trained
+            </Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
+              {overallDays}
+            </Text>
+          </View>
+          <View
+            style={[styles.metricCard, { backgroundColor: colors.surface }]}
+          >
+            <Text style={[styles.metricLabel, { color: colors.subtext }]}>
+              total volume
+            </Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
+              {overall.volume.toLocaleString()} kg
+            </Text>
+          </View>
+          <View
+            style={[styles.metricCard, { backgroundColor: colors.surface }]}
+          >
+            <Text style={[styles.metricLabel, { color: colors.subtext }]}>
+              sets done
+            </Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
+              {overall.sets}
+            </Text>
+          </View>
         </View>
 
-        {/* Volume trend */}
         <View style={[styles.card, { backgroundColor: colors.surface }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>
             Volume trend
           </Text>
-          {weekly.length > 0 ? (
+          {chartData.length > 0 ? (
             <LineChart
-              data={weekly.map((w) => ({ value: w.value, label: w.label }))}
+              data={chartData.map((point) => ({
+                value: point.value,
+                label: point.label,
+              }))}
               color={palette.green}
               thickness={2}
-              height={150}
-              spacing={44}
+              height={170}
+              spacing={34}
               hideRules
               dataPointsColor={palette.green}
               dataPointsRadius={3}
@@ -195,94 +157,94 @@ export default function ReportsScreen() {
             />
           ) : (
             <Text style={[styles.empty, { color: colors.subtext }]}>
-              no completed sessions in this period
+              no data available
             </Text>
           )}
         </View>
 
-        {/* Stat cards */}
-        <View style={styles.statGrid}>
-          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.statValue, { color: colors.text }]}>
-              {t.sessions}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.subtext }]}>
-              sessions
-            </Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.statValue, { color: colors.text }]}>
-              {consistency !== null ? `${consistency}%` : "—"}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.subtext }]}>
-              consistency
-            </Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.statValue, { color: colors.text }]}>
-              {t.volume.toLocaleString()}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.subtext }]}>
-              kg volume
-            </Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.statValue, { color: colors.text }]}>
-              {t.sets}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.subtext }]}>
-              sets done
-            </Text>
-          </View>
-        </View>
-
-        {/* Personal records */}
-        <View style={[styles.card, { backgroundColor: colors.surface }]}>
-          <View style={styles.prHead}>
-            <Trophy size={16} color={palette.green} />
-            <Text style={[styles.cardTitle, { color: colors.text }]}>
-              Personal records
-            </Text>
-          </View>
-          {prs.length === 0 && (
-            <Text style={[styles.empty, { color: colors.subtext }]}>
-              no records yet
-            </Text>
-          )}
-          {prs.map((p) => (
-            <View key={p.exercise_name} style={styles.prRow}>
-              <Text style={[styles.prName, { color: colors.text }]}>
-                {p.exercise_name}
-              </Text>
-              <Text style={[styles.prValue, { color: palette.green }]}>
-                {p.weight} kg × {p.reps}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Export certificate */}
-        <Pressable
-          onPress={handleExport}
-          disabled={exporting}
-          style={[styles.exportBtn, !selectedJourney && { opacity: 0.6 }]}
-        >
-          {exporting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <>
-              <FileText size={18} color="#FFFFFF" />
-              <Text style={styles.exportText}>
-                Export Portfolio Certificate
-              </Text>
-            </>
-          )}
-        </Pressable>
-        {!selectedJourney && (
-          <Text style={[styles.hint, { color: colors.subtext }]}>
-            select a journey above to enable export
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Your journeys
           </Text>
-        )}
+        </View>
+
+        {orderedJourneys.map((journey) => {
+          const summary = journeyStats[journey.id] ?? {
+            sessions: 0,
+            sets: 0,
+            volume: 0,
+          };
+          const active = journey.status === "active";
+          return (
+            <Pressable
+              key={journey.id}
+              onPress={() =>
+                router.push({
+                  pathname: "/report/[id]",
+                  params: { id: String(journey.id) },
+                })
+              }
+              style={[
+                styles.journeyRow,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.photoWrap}>
+                {journey.before_photo_uri ? (
+                  <Image
+                    source={{ uri: journey.before_photo_uri }}
+                    style={styles.thumb}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.thumb,
+                      {
+                        backgroundColor: colors.bg,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      },
+                    ]}
+                  >
+                    <Map size={18} color={palette.green} />
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.rowCopy}>
+                <Text style={[styles.journeyName, { color: colors.text }]}>
+                  {journey.name}
+                </Text>
+                <Text style={[styles.journeyMeta, { color: colors.subtext }]}>
+                  {summary.sessions} sessions •{" "}
+                  {summary.volume.toLocaleString()} kg
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.statusChip,
+                  {
+                    backgroundColor: active
+                      ? palette.green + "22"
+                      : colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusText,
+                    { color: active ? palette.green : colors.subtext },
+                  ]}
+                >
+                  {journey.status}
+                </Text>
+              </View>
+
+              <ChevronRight size={18} color={colors.subtext} />
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -290,41 +252,36 @@ export default function ReportsScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  scroll: { padding: 20, gap: 14, paddingBottom: 40 },
-  title: { fontSize: 22, fontWeight: "700" },
-  chipRow: {
-    flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 0,
-    paddingVertical: 2,
-  },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16 },
-  chipText: { fontSize: 12, fontWeight: "700" },
-  card: { borderRadius: 16, padding: 16, gap: 10 },
-  cardTitle: { fontSize: 14, fontWeight: "700" },
-  empty: { fontSize: 12, textAlign: "center", paddingVertical: 20 },
-  statGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  statCard: { flexBasis: "47%", borderRadius: 14, padding: 14, gap: 2 },
-  statValue: { fontSize: 20, fontWeight: "800" },
-  statLabel: { fontSize: 11, letterSpacing: 0.5 },
-  prHead: { flexDirection: "row", alignItems: "center", gap: 8 },
-  prRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 6,
-  },
-  prName: { fontSize: 13 },
-  prValue: { fontSize: 13, fontWeight: "700" },
-  exportBtn: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: palette.green,
+  content: { padding: 20, gap: 14, paddingBottom: 40 },
+  title: { fontSize: 24, fontWeight: "700" },
+  metricGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  metricCard: {
+    width: "47%",
     borderRadius: 16,
-    paddingVertical: 16,
-    marginTop: 4,
+    padding: 16,
+    minHeight: 100,
+    justifyContent: "space-between",
   },
-  exportText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
-  hint: { fontSize: 11, textAlign: "center", marginTop: -6 },
+  metricLabel: { fontSize: 12, fontWeight: "600", textTransform: "lowercase" },
+  metricValue: { fontSize: 22, fontWeight: "700" },
+  card: { borderRadius: 16, padding: 16, gap: 10 },
+  cardTitle: { fontSize: 16, fontWeight: "700" },
+  empty: { fontSize: 12, textAlign: "center", paddingVertical: 16 },
+  sectionHeaderRow: { marginTop: 2 },
+  sectionTitle: { fontSize: 18, fontWeight: "700" },
+  journeyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+  },
+  photoWrap: { width: 52, height: 52, borderRadius: 12, overflow: "hidden" },
+  thumb: { width: "100%", height: "100%" },
+  rowCopy: { flex: 1, gap: 2 },
+  journeyName: { fontSize: 15, fontWeight: "700" },
+  journeyMeta: { fontSize: 12 },
+  statusChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  statusText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
 });

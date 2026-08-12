@@ -56,13 +56,15 @@ export async function saveSchedule(input: ScheduleInput) {
       const trigger: Notifications.NotificationTriggerInput =
         input.schedule_type === "once" && input.target_date
           ? {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
               date: new Date(`${input.target_date}T${input.time}:00`),
             }
           : {
-              type: "weekly" as const,
+              type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
               weekday: input.days_of_week?.[0] ?? 1,
               hour: h,
               minute: m,
+              repeats: true,
             };
 
       notifId = await Notifications.scheduleNotificationAsync({
@@ -133,7 +135,7 @@ export async function deleteSchedule(workoutId: number) {
 export type ScheduleWithWorkout = {
   id: number;
   workout_id: number;
-  schedule_type: 'once' | 'weekly';
+  schedule_type: "once" | "weekly";
   target_date: string | null;
   days_of_week: string | null;
   time: string | null;

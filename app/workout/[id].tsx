@@ -1,4 +1,5 @@
 import { useStartSession } from "@/src/modules/session-player/useSessionPlayer";
+import { dialog } from "@core/ui/dialogStore";
 import { palette, useTheme } from "@core/ui/theme";
 import { WEEK_DAYS } from "@core/utils/dates";
 import { deleteSchedule } from "@modules/workouts/schedules";
@@ -10,25 +11,20 @@ import {
 } from "@modules/workouts/useWorkouts";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  AlertTriangle,
   BookmarkPlus,
   CalendarDays,
+  History,
   Pencil,
   Play,
   Trash2,
 } from "lucide-react-native";
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 export default function WorkoutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const wid = Number(id);
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const router = useRouter();
   const { data: workout } = useWorkoutDetail(wid);
   const { data: schedules } = useSchedulesByWorkout(wid);
@@ -48,9 +44,11 @@ export default function WorkoutDetailScreen() {
 
   const handlePlay = async () => {
     if (workout.is_template)
-      return Alert.alert(
+      return dialog.alert(
         "Templates",
         "Create a workout from this template first.",
+        [{ label: "OK" }],
+        { icon: AlertTriangle },
       );
 
     // Check for last completed session
@@ -59,17 +57,17 @@ export default function WorkoutDetailScreen() {
     );
 
     if (lastSession) {
-      Alert.alert(
+      dialog.alert(
         "Session History",
         `You completed this on ${lastSession.started_at?.slice(0, 10)} (${lastSession.sets_done} sets, ${Math.round(lastSession.volume)} kg)`,
         [
-          { text: "Cancel", style: "cancel" },
           {
-            text: "View Last Session",
+            label: "View Last Session",
             onPress: () => router.push(`/session/${lastSession.id}`),
           },
-          { text: "Start Fresh", onPress: () => doStartSession() },
+          { label: "Start Fresh", onPress: () => doStartSession() },
         ],
+        { variant: "sheet", icon: History },
       );
     } else {
       doStartSession();
@@ -84,32 +82,39 @@ export default function WorkoutDetailScreen() {
   };
 
   const destroy = () =>
-    Alert.alert("Delete workout", "Sets and schedule will also be removed.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          await deleteSchedule(wid);
-          del.mutate(wid, { onSuccess: () => router.back() });
+    dialog.alert(
+      "Delete workout",
+      "Sets and schedule will also be removed.",
+      [
+        {
+          label: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deleteSchedule(wid);
+            del.mutate(wid, { onSuccess: () => router.back() });
+          },
         },
-      },
-    ]);
+      ],
+      { icon: Trash2 },
+    );
 
   const saveAsTemplate = () =>
-    Alert.alert(
+    dialog.alert(
       "Save as template",
       "Creates a reusable blueprint of this workout.",
       [
-        { text: "Cancel", style: "cancel" },
         {
-          text: "Save",
+          label: "Save",
           onPress: () =>
             promote.mutate(wid, {
-              onSuccess: () => Alert.alert("Template saved ✅"),
+              onSuccess: () =>
+                dialog.alert("Template saved", undefined, [{ label: "OK" }], {
+                  icon: BookmarkPlus,
+                }),
             }),
         },
       ],
+      { icon: BookmarkPlus },
     );
 
   return (
@@ -124,7 +129,10 @@ export default function WorkoutDetailScreen() {
 
       {sc && (
         <View style={[styles.card, { backgroundColor: colors.surface }]}>
-          <CalendarDays size={18} color={palette.green} />
+          <CalendarDays
+            size={18}
+            color={mode === "dark" ? "#FFFFFF" : "#000000"}
+          />
           <Text style={[styles.cardText, { color: colors.text }]}>
             {sc.schedule_type === "once"
               ? `${sc.target_date} @ ${sc.time}`

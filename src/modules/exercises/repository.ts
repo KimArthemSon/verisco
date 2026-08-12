@@ -1,4 +1,4 @@
-import { getDb } from '@core/db';
+import { getDb } from "@core/db";
 
 export type Exercise = {
   id: number;
@@ -18,41 +18,57 @@ export type ExerciseInput = {
 
 export async function getExercises(): Promise<Exercise[]> {
   const db = await getDb();
-  return db.getAllAsync<Exercise>('SELECT * FROM exercises ORDER BY name');
+  return db.getAllAsync<Exercise>("SELECT * FROM exercises ORDER BY name");
 }
 
 export async function getExercise(id: number): Promise<Exercise | null> {
   const db = await getDb();
-  return db.getFirstAsync<Exercise>('SELECT * FROM exercises WHERE id = ?', [id]);
+  return db.getFirstAsync<Exercise>("SELECT * FROM exercises WHERE id = ?", [
+    id,
+  ]);
 }
 
 export async function createExercise(input: ExerciseInput) {
   const db = await getDb();
   return db.runAsync(
-    'INSERT INTO exercises (name, muscle_group, media_uri, notes) VALUES (?, ?, ?, ?)',
-    [input.name, input.muscle_group ?? null, input.media_uri ?? null, input.notes ?? null],
+    "INSERT INTO exercises (name, muscle_group, media_uri, notes) VALUES (?, ?, ?, ?)",
+    [
+      input.name,
+      input.muscle_group ?? null,
+      input.media_uri ?? null,
+      input.notes ?? null,
+    ],
   );
 }
 
-export async function updateExercise(id: number, patch: Partial<ExerciseInput>) {
+export async function updateExercise(
+  id: number,
+  patch: Partial<ExerciseInput>,
+) {
   const db = await getDb();
   const fields: string[] = [];
-  const params: unknown[] = [];
-  const keys = ['name', 'muscle_group', 'media_uri', 'notes'] as const;
+  const params: Array<string | number | null> = [];
+  const keys = ["name", "muscle_group", "media_uri", "notes"] as const;
 
   for (const k of keys) {
     if (k in patch) {
       fields.push(`${k} = ?`);
-      params.push((patch as Record<string, unknown>)[k] ?? null);
+      const value = (
+        patch as Record<string, string | number | null | undefined>
+      )[k];
+      params.push(value ?? null);
     }
   }
   if (fields.length === 0) return;
 
   params.push(id);
-  await db.runAsync(`UPDATE exercises SET ${fields.join(', ')} WHERE id = ?`, params);
+  await db.runAsync(
+    `UPDATE exercises SET ${fields.join(", ")} WHERE id = ?`,
+    ...params,
+  );
 }
 
 export async function deleteExercise(id: number) {
   const db = await getDb();
-  await db.runAsync('DELETE FROM exercises WHERE id = ?', [id]);
+  await db.runAsync("DELETE FROM exercises WHERE id = ?", [id]);
 }

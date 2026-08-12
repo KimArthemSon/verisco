@@ -3,6 +3,7 @@ import {
   createWorkout,
   deleteWorkout,
   getTemplates,
+  getWorkout,
   getWorkoutDetail,
   getWorkoutsByJourney,
   promoteToTemplate,
@@ -21,6 +22,14 @@ export function useTemplates() {
   return useQuery({
     queryKey: ["workouts", "templates"],
     queryFn: getTemplates,
+  });
+}
+
+export function useWorkout(id: number) {
+  return useQuery({
+    queryKey: ["workouts", id],
+    queryFn: () => getWorkout(id),
+    enabled: id > 0,
   });
 }
 
@@ -65,5 +74,3 @@ export function useUpdateWorkout() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["workouts"] }),
   });
 }
-
-

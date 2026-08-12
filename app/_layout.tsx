@@ -1,13 +1,16 @@
 import { getDb } from "@core/db";
+import { BackButton } from "@core/ui/BackButton";
+import { GlobalDialog } from "@core/ui/Dialog";
 import { Loader } from "@core/ui/Loader";
 import { ThemeProvider, useTheme } from "@core/ui/theme";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import * as NavigationBar from "expo-navigation-bar";
 import * as Notifications from "expo-notifications";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState, type ReactNode } from "react";
-import { LogBox } from "react-native";
+import { LogBox, Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 const queryClient = new QueryClient();
@@ -29,8 +32,16 @@ Notifications.setNotificationHandler({
 });
 
 function ThemedStatusBar() {
-  const { mode } = useTheme();
-  return <StatusBar style={mode === "dark" ? "light" : "dark"} />;
+  const { colors, mode } = useTheme();
+
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      NavigationBar.setBackgroundColorAsync(colors.bg);
+      NavigationBar.setButtonStyleAsync(mode === "dark" ? "light" : "dark");
+    }
+  }, [colors.bg, mode]);
+
+  return <StatusBar style={mode === "dark" ? "light" : "dark"} animated />;
 }
 
 function Screens() {
@@ -40,6 +51,8 @@ function Screens() {
     headerTintColor: mode === "dark" ? "#FFFFFF" : "#1A1A1A",
     headerTitleStyle: { fontWeight: "700" as const },
     headerShadowVisible: false,
+    headerTitleAlign: "center" as const,
+    headerLeft: () => <BackButton />,
   };
 
   return (
@@ -54,6 +67,7 @@ function Screens() {
         name="journey/[id]"
         options={{ ...header, title: "Journey" }}
       />
+      <Stack.Screen name="search" options={{ ...header, title: "Search" }} />
       <Stack.Screen
         name="workout/create"
         options={{ ...header, title: "New Workout" }}
@@ -69,6 +83,10 @@ function Screens() {
       <Stack.Screen
         name="exercise/create"
         options={{ ...header, title: "New Exercise" }}
+      />
+      <Stack.Screen
+        name="report/[id]"
+        options={{ ...header, title: "Journey Report" }}
       />
       <Stack.Screen
         name="session/[id]"
@@ -110,6 +128,7 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <ThemedStatusBar />
+          <GlobalDialog />
           <Boot>
             <Screens />
           </Boot>

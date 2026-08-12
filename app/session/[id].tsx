@@ -1,5 +1,7 @@
+import { dialog } from "@core/ui/dialogStore";
 import { RestRing } from "@core/ui/RestRing";
 import { palette, useTheme } from "@core/ui/theme";
+import { playEnd, playTick } from "@core/utils/sound";
 import { usePlayerStore } from "@modules/session-player/playerStore";
 import {
   useFinishSession,
@@ -11,17 +13,21 @@ import { ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  AlertTriangle,
   Check,
+  ChevronRight,
+  Clock3,
   Image as ImageIcon,
   Pause,
   Play,
   Plus,
   SkipForward,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
-  Alert,
   AppState,
   Image,
   KeyboardAvoidingView,
@@ -50,34 +56,61 @@ export default function SessionScreen() {
   const [mediaModalUri, setMediaModalUri] = useState<string | null>(null);
   const appState = useRef(AppState.currentState);
   const restoredFor = useRef<number | null>(null);
+  const lastSoundKey = useRef<number | null>(null);
 
-  // Reset player state every time we open a (different) session
   useEffect(() => {
     store.reset();
     restoredFor.current = null;
+    lastSoundKey.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Timer tick logic
   useEffect(() => {
     if (!store.timerRunning) return;
     const interval = setInterval(() => store.tickRest(), 1000);
     return () => clearInterval(interval);
   }, [store.timerRunning]);
 
-  // Auto-advance when timer hits 0
+  useEffect(() => {
+    if (store.view !== "resting") {
+      lastSoundKey.current = null;
+      return;
+    }
+
+    if ([3, 2, 1].includes(store.restSeconds)) {
+      if (lastSoundKey.current !== store.restSeconds) {
+        lastSoundKey.current = store.restSeconds;
+        if (store.soundOn) {
+          void playTick();
+        }
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      return;
+    }
+
+    if (store.restSeconds === 0 && !store.timerRunning) {
+      if (lastSoundKey.current !== 0) {
+        lastSoundKey.current = 0;
+        if (store.soundOn) {
+          void playEnd();
+        }
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
+      }
+    }
+  }, [store.restSeconds, store.soundOn, store.timerRunning, store.view]);
+
   useEffect(() => {
     if (
       store.view === "resting" &&
       store.restSeconds === 0 &&
       !store.timerRunning
     ) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       store.stopRest();
     }
   }, [store.restSeconds, store.timerRunning, store.view]);
 
-  // Pause timer when app goes to background
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
       if (
@@ -91,22 +124,19 @@ export default function SessionScreen() {
     return () => sub.remove();
   }, []);
 
-  // ✅ Restore state exactly ONCE per session (not on every refetch)
   useEffect(() => {
     if (!session) return;
     if (restoredFor.current === session.id) return;
     restoredFor.current = session.id;
 
-    // Finished (completed / aborted) → read-only summary
     if (session.status !== "in_progress") {
       store.showSummary();
       return;
     }
 
-    // Find first uncompleted set → jump straight into playing
-    for (let exIdx = 0; exIdx < session.exercises.length; exIdx++) {
+    for (let exIdx = 0; exIdx < session.exercises.length; exIdx += 1) {
       const ex = session.exercises[exIdx];
-      for (let setIdx = 0; setIdx < ex.sets.length; setIdx++) {
+      for (let setIdx = 0; setIdx < ex.sets.length; setIdx += 1) {
         if (ex.sets[setIdx].completed === 0) {
           store.setIndices(exIdx, setIdx);
           store.setView("playing");
@@ -115,13 +145,13 @@ export default function SessionScreen() {
       }
     }
 
-    // in_progress but every set done → summary so you can Save & Finish
     store.showSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  if (!session)
+  if (!session) {
     return <View style={[styles.root, { backgroundColor: colors.bg }]} />;
+  }
 
   const currentEx = session.exercises[store.currentExerciseIndex];
   const currentSet = currentEx?.sets[store.currentSetIndex];
@@ -172,14 +202,18 @@ export default function SessionScreen() {
   };
 
   const handleAbandon = () => {
-    Alert.alert("Abandon session?", "Your progress will be saved as aborted.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Abandon",
-        style: "destructive",
-        onPress: () => handleSaveSession("aborted"),
-      },
-    ]);
+    dialog.alert(
+      "Abandon session?",
+      "Your progress will be saved as aborted.",
+      [
+        {
+          label: "Abandon",
+          style: "destructive",
+          onPress: () => handleSaveSession("aborted"),
+        },
+      ],
+      { icon: AlertTriangle },
+    );
   };
 
   const handleClose = () => router.back();
@@ -205,9 +239,11 @@ export default function SessionScreen() {
     0,
   );
 
+  const currentExerciseLabel =
+    session.exercises[store.currentExerciseIndex]?.exercise_name ?? "Next";
+
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]}>
-      {/* Header */}
       <View style={styles.header}>
         <Pressable
           onPress={isReadOnly ? handleClose : handleAbandon}
@@ -215,6 +251,7 @@ export default function SessionScreen() {
         >
           <X size={24} color={colors.text} />
         </Pressable>
+
         <View style={styles.progressWrap}>
           <View
             style={[styles.progressBar, { backgroundColor: colors.border }]}
@@ -227,15 +264,28 @@ export default function SessionScreen() {
             {completedSets}/{totalSets} sets
           </Text>
         </View>
-        <View style={{ width: 24 }} />
+
+        <Pressable
+          onPress={store.toggleSound}
+          style={styles.muteBtn}
+          accessibilityLabel={store.soundOn ? "Mute sound" : "Unmute sound"}
+        >
+          {store.soundOn ? (
+            <Volume2 size={20} color={colors.subtext} />
+          ) : (
+            <VolumeX size={20} color={colors.subtext} />
+          )}
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.content}>
-          {/* OVERVIEW */}
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
           {store.view === "overview" && !isReadOnly && (
             <View style={styles.center}>
               <Text style={[styles.title, { color: colors.text }]}>Ready?</Text>
@@ -249,25 +299,37 @@ export default function SessionScreen() {
             </View>
           )}
 
-          {/* PLAYING */}
           {store.view === "playing" &&
             currentEx &&
             currentSet &&
             !isReadOnly && (
               <View style={styles.playingWrap}>
                 <View style={styles.exHeader}>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={[styles.exNum, { color: colors.subtext }]}>
-                      Exercise {store.currentExerciseIndex + 1} of{" "}
+                      EXERCISE {store.currentExerciseIndex + 1} OF{" "}
                       {session.exercises.length}
                     </Text>
                     <Text style={[styles.exName, { color: colors.text }]}>
                       {currentEx.exercise_name}
                     </Text>
-                    <Text style={[styles.exSub, { color: colors.subtext }]}>
-                      {currentEx.exercise_muscle_group}
-                    </Text>
+                    <View
+                      style={[
+                        styles.muscleChip,
+                        { backgroundColor: colors.accent + "1A" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.muscleChipText,
+                          { color: colors.accent },
+                        ]}
+                      >
+                        {currentEx.exercise_muscle_group}
+                      </Text>
+                    </View>
                   </View>
+
                   {currentEx.exercise_media_uri && (
                     <Pressable
                       onPress={() =>
@@ -276,11 +338,15 @@ export default function SessionScreen() {
                       style={styles.formBtn}
                     >
                       {currentEx.exercise_media_uri.endsWith(".mp4") ? (
-                        <Play size={16} color={palette.green} />
+                        <Play size={16} color={colors.accent} />
                       ) : (
-                        <ImageIcon size={16} color={palette.green} />
+                        <ImageIcon size={16} color={colors.accent} />
                       )}
-                      <Text style={styles.formBtnText}>Form</Text>
+                      <Text
+                        style={[styles.formBtnText, { color: colors.accent }]}
+                      >
+                        Form
+                      </Text>
                     </Pressable>
                   )}
                 </View>
@@ -315,7 +381,7 @@ export default function SessionScreen() {
                     >
                       Weight
                     </Text>
-                    <View style={{ width: 30 }} />
+                    <View style={{ width: 24 }} />
                   </View>
 
                   {currentEx.sets.map((s, idx) => {
@@ -326,9 +392,11 @@ export default function SessionScreen() {
                         style={[
                           styles.setRow,
                           isCurrent && {
-                            backgroundColor: palette.green + "11",
-                            borderRadius: 8,
-                            paddingHorizontal: 4,
+                            backgroundColor: colors.accent + "14",
+                            borderRadius: 10,
+                            borderLeftWidth: 3,
+                            borderLeftColor: colors.accent,
+                            paddingLeft: 8,
                           },
                         ]}
                       >
@@ -344,12 +412,20 @@ export default function SessionScreen() {
                         {s.completed === 1 ? (
                           <Pressable
                             onPress={() => handleToggleComplete(s.id, true)}
-                            style={[styles.setInput, { alignItems: "center" }]}
+                            style={[
+                              styles.setInput,
+                              styles.completedChip,
+                              {
+                                alignItems: "center",
+                                backgroundColor: colors.bg,
+                                borderColor: colors.border,
+                              },
+                            ]}
                           >
                             <Text
                               style={[
                                 styles.completedText,
-                                { color: palette.green },
+                                { color: colors.accent },
                               ]}
                             >
                               {s.reps ?? "-"}
@@ -362,6 +438,8 @@ export default function SessionScreen() {
                               {
                                 backgroundColor: colors.bg,
                                 color: colors.text,
+                                borderColor: colors.border,
+                                borderWidth: 1,
                               },
                             ]}
                             keyboardType="number-pad"
@@ -379,12 +457,20 @@ export default function SessionScreen() {
                         {s.completed === 1 ? (
                           <Pressable
                             onPress={() => handleToggleComplete(s.id, true)}
-                            style={[styles.setInput, { alignItems: "center" }]}
+                            style={[
+                              styles.setInput,
+                              styles.completedChip,
+                              {
+                                alignItems: "center",
+                                backgroundColor: colors.bg,
+                                borderColor: colors.border,
+                              },
+                            ]}
                           >
                             <Text
                               style={[
                                 styles.completedText,
-                                { color: palette.green },
+                                { color: colors.accent },
                               ]}
                             >
                               {s.weight === 0 ? "BW" : `${s.weight}`}
@@ -397,6 +483,8 @@ export default function SessionScreen() {
                               {
                                 backgroundColor: colors.bg,
                                 color: colors.text,
+                                borderColor: colors.border,
+                                borderWidth: 1,
                               },
                             ]}
                             keyboardType="number-pad"
@@ -416,7 +504,7 @@ export default function SessionScreen() {
                             onPress={() => handleToggleComplete(s.id, true)}
                             hitSlop={8}
                           >
-                            <Check size={20} color={palette.green} />
+                            <Check size={20} color={colors.accent} />
                           </Pressable>
                         ) : (
                           <View style={{ width: 20 }} />
@@ -426,21 +514,27 @@ export default function SessionScreen() {
                   })}
                 </View>
 
-                <Pressable
-                  onPress={handleCompleteSet}
-                  disabled={currentSet.completed === 1}
-                  style={[
-                    styles.completeBtn,
-                    currentSet.completed === 1 && { opacity: 0.5 },
-                  ]}
-                >
-                  <Check size={20} color="#FFFFFF" />
-                  <Text style={styles.completeBtnText}>Complete Set</Text>
-                </Pressable>
+                {currentSet.rest_seconds > 0 && (
+                  <View
+                    style={[
+                      styles.restHintRow,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Clock3 size={14} color={colors.subtext} />
+                    <Text
+                      style={[styles.restHintText, { color: colors.subtext }]}
+                    >
+                      {currentSet.rest_seconds}s rest after this set
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
 
-          {/* RESTING */}
           {store.view === "resting" && !isReadOnly && (
             <View style={styles.center}>
               <RestRing
@@ -451,7 +545,13 @@ export default function SessionScreen() {
               <View style={styles.restActions}>
                 <Pressable
                   onPress={() => store.addTime(30)}
-                  style={[styles.restBtn, { backgroundColor: colors.surface }]}
+                  style={[
+                    styles.restBtn,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
                 >
                   <Plus size={20} color={colors.text} />
                   <Text style={[styles.restBtnText, { color: colors.text }]}>
@@ -461,7 +561,13 @@ export default function SessionScreen() {
 
                 <Pressable
                   onPress={() => store.setTimerRunning(!store.timerRunning)}
-                  style={[styles.restBtn, { backgroundColor: colors.surface }]}
+                  style={[
+                    styles.restBtn,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
                 >
                   {store.timerRunning ? (
                     <Pause size={20} color={colors.text} />
@@ -472,7 +578,13 @@ export default function SessionScreen() {
 
                 <Pressable
                   onPress={() => store.stopRest()}
-                  style={[styles.restBtn, { backgroundColor: colors.surface }]}
+                  style={[
+                    styles.restBtn,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
                 >
                   <SkipForward size={20} color={colors.text} />
                   <Text style={[styles.restBtnText, { color: colors.text }]}>
@@ -481,17 +593,28 @@ export default function SessionScreen() {
                 </Pressable>
               </View>
 
-              {session.exercises[store.currentExerciseIndex] && (
-                <Text style={[styles.nextText, { color: colors.subtext }]}>
-                  Next:{" "}
-                  {session.exercises[store.currentExerciseIndex].exercise_name}{" "}
-                  • Set {store.currentSetIndex + 1}
-                </Text>
-              )}
+              <View
+                style={[
+                  styles.nextCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.nextLabel, { color: colors.accent }]}>
+                    NEXT
+                  </Text>
+                  <Text style={[styles.nextTitle, { color: colors.text }]}>
+                    {currentExerciseLabel} • Set {store.currentSetIndex + 1}
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={colors.subtext} />
+              </View>
             </View>
           )}
 
-          {/* SUMMARY */}
           {store.view === "summary" && (
             <View style={styles.summaryWrap}>
               {wasAborted ? (
@@ -558,7 +681,6 @@ export default function SessionScreen() {
                 </View>
               </View>
 
-              {/* Per-exercise breakdown */}
               <View
                 style={[styles.statsCard, { backgroundColor: colors.surface }]}
               >
@@ -613,7 +735,28 @@ export default function SessionScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Media Modal */}
+      {store.view === "playing" && !isReadOnly && currentSet && (
+        <View
+          style={[
+            styles.bottomBar,
+            { backgroundColor: colors.bg, borderTopColor: colors.border },
+          ]}
+        >
+          <Pressable
+            onPress={handleCompleteSet}
+            disabled={currentSet.completed === 1}
+            style={[
+              styles.completeBottomBtn,
+              { backgroundColor: colors.accent },
+              currentSet.completed === 1 && { opacity: 0.5 },
+            ]}
+          >
+            <Check size={20} color="#FFFFFF" />
+            <Text style={styles.completeBottomBtnText}>Complete Set</Text>
+          </Pressable>
+        </View>
+      )}
+
       <Modal visible={!!mediaModalUri} transparent animationType="fade">
         <View style={[styles.modalBg, { backgroundColor: "rgba(0,0,0,0.9)" }]}>
           <Pressable
@@ -649,7 +792,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
     gap: 12,
   },
   closeBtn: { padding: 4 },
@@ -657,7 +802,19 @@ const styles = StyleSheet.create({
   progressBar: { height: 4, borderRadius: 2, overflow: "hidden" },
   progressFill: { height: 4, backgroundColor: palette.green, borderRadius: 2 },
   progressText: { fontSize: 11, textAlign: "center" },
-  content: { padding: 20, flexGrow: 1 },
+  muteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
+    flexGrow: 1,
+  },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16 },
   summaryWrap: { alignItems: "center", gap: 16, paddingBottom: 24 },
   title: { fontSize: 24, fontWeight: "700" },
@@ -674,79 +831,136 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   primaryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 16 },
-
-  playingWrap: { flex: 1, gap: 20 },
+  playingWrap: { flex: 1, gap: 18 },
   exHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    gap: 16,
   },
-  exNum: { fontSize: 12, fontWeight: "600" },
-  exName: { fontSize: 20, fontWeight: "700", marginTop: 2 },
-  exSub: { fontSize: 13, marginTop: 2 },
+  exNum: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+  exName: { fontSize: 22, fontWeight: "700", marginTop: 6 },
+  muscleChip: {
+    alignSelf: "flex-start",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 8,
+  },
+  muscleChipText: { fontSize: 12, fontWeight: "700" },
   formBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    padding: 8,
-    borderRadius: 8,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: palette.green,
   },
-  formBtnText: { fontSize: 12, fontWeight: "600", color: palette.green },
-
-  setsCard: { borderRadius: 16, padding: 16, gap: 10 },
+  formBtnText: { fontSize: 12, fontWeight: "600" },
+  setsCard: { borderRadius: 16, padding: 14, gap: 10 },
   setRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     paddingVertical: 4,
   },
-  setHead: { fontSize: 11, fontWeight: "700" },
-  setNum: { width: 30, fontSize: 14, fontWeight: "600" },
+  setHead: { fontSize: 11, fontWeight: "700", textTransform: "uppercase" },
+  setNum: { width: 26, fontSize: 14, fontWeight: "600" },
   setInput: {
     flex: 1,
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 15,
+    height: 48,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    fontSize: 16,
     textAlign: "center",
+    textAlignVertical: "center",
   },
-  completedText: { fontSize: 15, fontWeight: "700" },
-
-  completeBtn: {
+  completedChip: {
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  completedText: { fontSize: 16, fontWeight: "700" },
+  restHintRow: {
     flexDirection: "row",
+    alignItems: "center",
     gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  restHintText: { fontSize: 13, fontWeight: "600" },
+  bottomBar: {
+    borderTopWidth: 1,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 6,
+  },
+  completeBottomBtn: {
+    flexDirection: "row",
+    height: 56,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: palette.green,
-    borderRadius: 16,
-    paddingVertical: 18,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
-  completeBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 16 },
-
-  restActions: { flexDirection: "row", gap: 20, marginTop: 24 },
+  completeBottomBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 16 },
+  restActions: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 20,
+    marginTop: 20,
+  },
   restBtn: {
     width: 56,
     height: 56,
     borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
     gap: 2,
   },
   restBtnText: { fontSize: 10, fontWeight: "700" },
-  nextText: { fontSize: 14, marginTop: 24 },
-
+  nextCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginTop: 18,
+  },
+  nextLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 1.2 },
+  nextTitle: { fontSize: 14, fontWeight: "600", marginTop: 4 },
   statsCard: { width: "100%", borderRadius: 16, padding: 20, gap: 12 },
   statRow: { flexDirection: "row", justifyContent: "space-between" },
   statLabel: { fontSize: 14 },
   statValue: { fontSize: 16, fontWeight: "700" },
-
   breakdownEx: { gap: 6, marginBottom: 8 },
   breakdownName: { fontSize: 14, fontWeight: "700" },
   breakdownRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   breakdownSet: { fontSize: 13 },
   dashDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5 },
-
   modalBg: { flex: 1, alignItems: "center", justifyContent: "center" },
   modalClose: {
     position: "absolute",

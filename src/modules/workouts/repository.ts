@@ -26,8 +26,10 @@ export type Workout = {
   created_at: string;
 };
 
+export type WorkoutExerciseWithSets = WorkoutExercise & { sets: WorkoutSet[] };
+
 export type WorkoutDetail = Workout & {
-  exercises: (WorkoutExercise & { sets: WorkoutSet[] })[];
+  exercises: WorkoutExerciseWithSets[];
 };
 
 export type WorkoutInput = {
@@ -57,6 +59,10 @@ export async function getTemplates(): Promise<Workout[]> {
   );
 }
 
+export async function getWorkout(id: number): Promise<WorkoutDetail | null> {
+  return getWorkoutDetail(id);
+}
+
 export async function getWorkoutDetail(
   id: number,
 ): Promise<WorkoutDetail | null> {
@@ -76,14 +82,18 @@ export async function getWorkoutDetail(
     [id],
   );
 
+  const withSets: WorkoutExerciseWithSets[] = [];
   for (const we of exercises) {
-    we.sets = await db.getAllAsync<WorkoutSet>(
-      "SELECT * FROM workout_sets WHERE workout_exercise_id = ? ORDER BY set_number",
-      [we.id],
-    );
+    withSets.push({
+      ...we,
+      sets: await db.getAllAsync<WorkoutSet>(
+        "SELECT * FROM workout_sets WHERE workout_exercise_id = ? ORDER BY set_number",
+        [we.id],
+      ),
+    });
   }
 
-  return { ...workout, exercises };
+  return { ...workout, exercises: withSets };
 }
 
 export async function createWorkout(input: WorkoutInput) {

@@ -1,4 +1,4 @@
-import { getDb } from '@core/db';
+import { getDb } from "@core/db";
 
 export type ReportSet = {
   exercise_id: number;
@@ -26,7 +26,9 @@ export type CertificateStats = {
   consistency: number | null;
 };
 
-export async function getReportSessions(journeyId: number | null): Promise<ReportSession[]> {
+export async function getReportSessions(
+  journeyId: number | null,
+): Promise<ReportSession[]> {
   const db = await getDb();
   const sessions = journeyId
     ? await db.getAllAsync<any>(
@@ -61,19 +63,27 @@ export async function getReportSessions(journeyId: number | null): Promise<Repor
   return sessions.map((s) => ({ ...s, sets: bySession.get(s.id) ?? [] }));
 }
 
-export function inLastDays(sessions: ReportSession[], days: number): ReportSession[] {
+export function inLastDays(
+  sessions: ReportSession[],
+  days: number,
+): ReportSession[] {
   const from = Date.now() - days * 86400000;
   return sessions.filter(
-    (s) => s.started_at && new Date(s.started_at.replace(' ', 'T')).getTime() >= from,
+    (s) =>
+      s.started_at &&
+      new Date(s.started_at.replace(" ", "T")).getTime() >= from,
   );
 }
 
 export function sessionVolume(s: ReportSession): number {
-  return s.sets.reduce((acc, set) => acc + (set.weight > 0 ? (set.reps ?? 0) * set.weight : 0), 0);
+  return s.sets.reduce(
+    (acc, set) => acc + (set.weight > 0 ? (set.reps ?? 0) * set.weight : 0),
+    0,
+  );
 }
 
 export function totals(sessions: ReportSession[]) {
-  const completed = sessions.filter((s) => s.status === 'completed');
+  const completed = sessions.filter((s) => s.status === "completed");
   return {
     sessions: completed.length,
     sets: completed.reduce((a, s) => a + s.sets.length, 0),
@@ -81,24 +91,95 @@ export function totals(sessions: ReportSession[]) {
   };
 }
 
-export function weeklyVolume(sessions: ReportSession[]): { label: string; value: number }[] {
+export function daysTrained(sessions: ReportSession[]): number {
+  const dates = new Set(
+    sessions
+      .filter((s) => s.status === "completed" && s.started_at)
+      .map((s) => s.started_at!.slice(0, 10)),
+  );
+  return dates.size;
+}
+
+export function finishRate(sessions: ReportSession[]): number | null {
+  const finished = sessions.filter(
+    (s) => s.status === "completed" || s.status === "aborted",
+  );
+  if (finished.length === 0) return null;
+  const completed = sessions.filter((s) => s.status === "completed").length;
+  return Math.round((completed / finished.length) * 100);
+}
+
+export function journeyRollups(sessions: ReportSession[]) {
+  const map = new Map<
+    number,
+    {
+      journey_id: number;
+      sessions: number;
+      sets: number;
+      volume: number;
+      last_date: string | null;
+    }
+  >();
+
+  sessions
+    .filter((s) => s.status === "completed")
+    .forEach((s) => {
+      const current = map.get(s.journey_id) ?? {
+        journey_id: s.journey_id,
+        sessions: 0,
+        sets: 0,
+        volume: 0,
+        last_date: null,
+      };
+
+      current.sessions += 1;
+      current.sets += s.sets.length;
+      current.volume += sessionVolume(s);
+      current.last_date =
+        current.last_date && s.started_at
+          ? current.last_date > s.started_at
+            ? current.last_date
+            : s.started_at
+          : (s.started_at ?? current.last_date);
+
+      map.set(s.journey_id, current);
+    });
+
+  return Array.from(map.values())
+    .map((item) => ({ ...item, volume: Math.round(item.volume) }))
+    .sort((a, b) => {
+      const left = a.last_date ?? "";
+      const right = b.last_date ?? "";
+      return right.localeCompare(left);
+    });
+}
+
+export function weeklyVolume(
+  sessions: ReportSession[],
+): { label: string; value: number }[] {
   const map = new Map<string, number>();
   sessions
-    .filter((s) => s.status === 'completed' && s.started_at)
+    .filter((s) => s.status === "completed" && s.started_at)
     .forEach((s) => {
-      const d = new Date(s.started_at!.replace(' ', 'T'));
+      const d = new Date(s.started_at!.replace(" ", "T"));
       const monday = new Date(d);
       monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
       const key = `${monday.getMonth() + 1}/${monday.getDate()}`;
       map.set(key, (map.get(key) ?? 0) + sessionVolume(s));
     });
-  return Array.from(map.entries()).map(([label, value]) => ({ label, value: Math.round(value) }));
+  return Array.from(map.entries()).map(([label, value]) => ({
+    label,
+    value: Math.round(value),
+  }));
 }
 
 export function personalRecords(sessions: ReportSession[]) {
-  const best = new Map<string, { exercise_name: string; weight: number; reps: number }>();
+  const best = new Map<
+    string,
+    { exercise_name: string; weight: number; reps: number }
+  >();
   sessions
-    .filter((s) => s.status === 'completed')
+    .filter((s) => s.status === "completed")
     .forEach((s) =>
       s.sets.forEach((set) => {
         if (set.weight <= 0) return;
@@ -116,16 +197,20 @@ export function personalRecords(sessions: ReportSession[]) {
 }
 
 export function scheduledOccurrences(
-  schedules: { schedule_type: string; target_date: string | null; days_of_week: string | null }[],
+  schedules: {
+    schedule_type: string;
+    target_date: string | null;
+    days_of_week: string | null;
+  }[],
   days: number,
 ): number {
   const from = Date.now() - days * 86400000;
   let occ = 0;
   schedules.forEach((sc) => {
-    if (sc.schedule_type === 'once' && sc.target_date) {
+    if (sc.schedule_type === "once" && sc.target_date) {
       const t = new Date(`${sc.target_date}T00:00:00`).getTime();
       if (t >= from && t <= Date.now()) occ += 1;
-    } else if (sc.schedule_type === 'weekly' && sc.days_of_week) {
+    } else if (sc.schedule_type === "weekly" && sc.days_of_week) {
       let arr: number[] = [];
       try {
         arr = JSON.parse(sc.days_of_week);
@@ -140,7 +225,11 @@ export function scheduledOccurrences(
 
 export function buildStats(
   sessions: ReportSession[],
-  schedules: { schedule_type: string; target_date: string | null; days_of_week: string | null }[],
+  schedules: {
+    schedule_type: string;
+    target_date: string | null;
+    days_of_week: string | null;
+  }[],
   days: number,
 ): CertificateStats {
   const scoped = inLastDays(sessions, days);
@@ -152,7 +241,14 @@ export function buildStats(
     volume: t.volume,
     prs: personalRecords(scoped).slice(0, 3),
     weekly: weeklyVolume(scoped).slice(-8),
-    workouts: Array.from(new Set(scoped.filter((s) => s.status === 'completed').map((s) => s.workout_name))),
-    consistency: occ > 0 ? Math.min(100, Math.round((t.sessions / occ) * 100)) : null,
+    workouts: Array.from(
+      new Set(
+        scoped
+          .filter((s) => s.status === "completed")
+          .map((s) => s.workout_name),
+      ),
+    ),
+    consistency:
+      occ > 0 ? Math.min(100, Math.round((t.sessions / occ) * 100)) : null,
   };
 }

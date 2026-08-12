@@ -1,7 +1,7 @@
-import * as SQLite from 'expo-sqlite';
-import { SCHEMA } from './schema';
+import * as SQLite from "expo-sqlite";
+import { SCHEMA } from "./schema";
 
-const DB_NAME = 'viresco.db';
+const DB_NAME = "viresco.db";
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -10,8 +10,15 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const db = await SQLite.openDatabaseAsync(DB_NAME);
-      await db.execAsync('PRAGMA foreign_keys = ON;');
+      await db.execAsync("PRAGMA foreign_keys = ON;");
       await db.execAsync(SCHEMA);
+      try {
+        await db.execAsync(
+          "ALTER TABLE journeys ADD COLUMN completion_note TEXT",
+        );
+      } catch {
+        // Existing installs keep the legacy table shape; ignore duplicate-column errors.
+      }
       return db;
     })();
   }
