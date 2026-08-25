@@ -308,7 +308,7 @@ export default function JourneyDetailScreen() {
           { paddingBottom: 170 + insets.bottom },
         ]}
       >
-        {/* ─── Hero ─── */}
+        {/* ─── Hero ── */}
         <Pressable onPress={photoActions} style={styles.heroWrap}>
           {journey.before_photo_uri ? (
             <View style={styles.heroImageWrap}>
@@ -346,51 +346,48 @@ export default function JourneyDetailScreen() {
           )}
         </Pressable>
 
-        {/* ─── Title + Purpose side by side ─── */}
-        <View style={styles.titleRow}>
-          <View style={styles.titleCol}>
-            <Text style={[styles.name, { color: colors.text }]}>
-              {journey.name}
+        {/* ─── Name + Status row ─── */}
+        <View style={styles.headerRow}>
+          <Text style={[styles.name, { color: colors.text }]}>
+            {journey.name}
+          </Text>
+          <View
+            style={[
+              styles.chip,
+              {
+                backgroundColor: `${statusColor}18`,
+                borderWidth: 1,
+                borderColor: `${statusColor}30`,
+              },
+            ]}
+          >
+            <Text style={[styles.chipText, { color: statusColor }]}>
+              {journey.status}
             </Text>
+          </View>
+        </View>
+
+        {/* ─── Purpose (full width, below) ─── */}
+        {journey.purpose_quote ? (
+          <View style={styles.purposeWrap}>
+            <View
+              style={[styles.purposeBar, { backgroundColor: colors.accent }]}
+            />
             <View
               style={[
-                styles.chip,
-                {
-                  backgroundColor: `${statusColor}18`,
-                  borderWidth: 1,
-                  borderColor: `${statusColor}30`,
-                },
+                styles.purposeContent,
+                { backgroundColor: colors.surface },
               ]}
             >
-              <Text style={[styles.chipText, { color: statusColor }]}>
-                {journey.status}
+              <Quote size={14} color={colors.accent} />
+              <Text style={[styles.quote, { color: colors.text }]}>
+                “{journey.purpose_quote}”
               </Text>
             </View>
           </View>
-          {journey.purpose_quote ? (
-            <View style={styles.purposeWrap}>
-              <View
-                style={[styles.purposeBar, { backgroundColor: colors.accent }]}
-              />
-              <View
-                style={[
-                  styles.purposeContent,
-                  { backgroundColor: colors.surface },
-                ]}
-              >
-                <Quote size={14} color={colors.accent} />
-                <Text
-                  style={[styles.quote, { color: colors.text }]}
-                  numberOfLines={3}
-                >
-                  “{journey.purpose_quote}”
-                </Text>
-              </View>
-            </View>
-          ) : null}
-        </View>
+        ) : null}
 
-        {/* ─── Progress ── */}
+        {/* ─── Progress ─── */}
         <Section title="Progress">
           <View style={styles.progressRow}>
             <View
@@ -442,7 +439,7 @@ export default function JourneyDetailScreen() {
               }
               style={[styles.addPill, { backgroundColor: colors.accent }]}
             >
-              <Plus size={14} color={palette.onAccent ?? "#FFFFFF"} />
+              <Plus size={14} color="#FFFFFF" />
               <Text style={styles.addPillText}>Add</Text>
             </Pressable>
           </View>
@@ -837,15 +834,24 @@ const styles = StyleSheet.create({
   },
   heroHint: { fontSize: 12, fontWeight: "600" },
 
-  /* Title + purpose */
-  titleRow: { flexDirection: "row", gap: 12, alignItems: "stretch" },
-  titleCol: { gap: 8, justifyContent: "center" },
-  name: { fontSize: 24, fontWeight: "800", letterSpacing: -0.5 },
+  /* Name + status row */
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  name: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+    lineHeight: 30,
+  },
   chip: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
-    alignSelf: "flex-start",
+    marginTop: 4,
   },
   chipText: {
     fontSize: 11,
@@ -853,8 +859,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: "uppercase",
   },
+
+  /* Purpose (full width) */
   purposeWrap: {
-    flex: 1,
     borderRadius: 14,
     overflow: "hidden",
     flexDirection: "row",
@@ -862,10 +869,10 @@ const styles = StyleSheet.create({
   purposeBar: { width: 3 },
   purposeContent: {
     flex: 1,
-    padding: 12,
+    padding: 14,
     gap: 6,
   },
-  quote: { fontSize: 13, fontStyle: "italic", lineHeight: 19 },
+  quote: { fontSize: 14, fontStyle: "italic", lineHeight: 21 },
 
   /* Progress */
   progressRow: { flexDirection: "row", alignItems: "center", gap: 12 },
