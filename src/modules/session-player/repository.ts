@@ -1,4 +1,6 @@
-import { getDb } from '@core/db';
+import { getDb } from "@core/db";
+
+export type SessionSetType = "reps" | "time";
 
 export type SessionDetail = {
   id: number;
@@ -15,6 +17,7 @@ export type SessionDetail = {
     sets: {
       id: number;
       set_number: number;
+      set_type: SessionSetType;
       reps: number | null;
       weight: number;
       completed: number;
@@ -26,34 +29,43 @@ export type SessionDetail = {
 
 export async function startSession(workoutId: number, journeyId: number) {
   const db = await getDb();
-  
+
   // 1. Create the session
   const sessionRes = await db.runAsync(
     "INSERT INTO sessions (workout_id, journey_id, started_at, status) VALUES (?, ?, datetime('now'), 'in_progress')",
-    [workoutId, journeyId]
+    [workoutId, journeyId],
   );
   const sessionId = sessionRes.lastInsertRowId;
 
   // 2. Pre-populate session_sets from the workout plan
-  await db.runAsync(`
-    INSERT INTO session_sets (session_id, exercise_id, set_number, reps, weight)
-    SELECT ?, we.exercise_id, ws.set_number, ws.reps, ws.weight
+  await db.runAsync(
+    `
+    INSERT INTO session_sets (session_id, exercise_id, set_number, set_type, reps, weight)
+    SELECT ?, we.exercise_id, ws.set_number, COALESCE(ws.set_type, 'reps'), ws.reps, ws.weight
     FROM workout_exercises we
     JOIN workout_sets ws ON ws.workout_exercise_id = we.id
     WHERE we.workout_id = ?
-  `, [sessionId, workoutId]);
+  `,
+    [sessionId, workoutId],
+  );
 
   return sessionId;
 }
 
-export async function getSessionDetail(sessionId: number): Promise<SessionDetail | null> {
+export async function getSessionDetail(
+  sessionId: number,
+): Promise<SessionDetail | null> {
   const db = await getDb();
-  const session = await db.getFirstAsync<any>('SELECT * FROM sessions WHERE id = ?', [sessionId]);
+  const session = await db.getFirstAsync<any>(
+    "SELECT * FROM sessions WHERE id = ?",
+    [sessionId],
+  );
   if (!session) return null;
 
   // Join with workout plan to get rest_seconds and preserve exercise order
-  const sets = await db.getAllAsync<any>(`
-    SELECT ss.id, ss.exercise_id, ss.set_number, ss.reps, ss.weight, ss.completed, ss.completed_at,
+  const sets = await db.getAllAsync<any>(
+    `
+    SELECT ss.id, ss.exercise_id, ss.set_number, COALESCE(ss.set_type, ws.set_type, 'reps') AS set_type, ss.reps, ss.weight, ss.completed, ss.completed_at,
            e.name AS exercise_name, e.muscle_group AS exercise_muscle_group, e.media_uri AS exercise_media_uri,
            COALESCE(ws.rest_seconds, 60) as rest_seconds
     FROM session_sets ss
@@ -62,7 +74,9 @@ export async function getSessionDetail(sessionId: number): Promise<SessionDetail
     LEFT JOIN workout_sets ws ON ws.workout_exercise_id = we.id AND ws.set_number = ss.set_number
     WHERE ss.session_id = ?
     ORDER BY we.position, ss.set_number
-  `, [session.workout_id, sessionId]);
+  `,
+    [session.workout_id, sessionId],
+  );
 
   // Group sets by exercise
   const exerciseMap = new Map<number, any>();
@@ -73,36 +87,56 @@ export async function getSessionDetail(sessionId: number): Promise<SessionDetail
         exercise_name: s.exercise_name,
         exercise_muscle_group: s.exercise_muscle_group,
         exercise_media_uri: s.exercise_media_uri,
-        sets: []
+        sets: [],
       });
     }
     exerciseMap.get(s.exercise_id).sets.push({
-      id: s.id, set_number: s.set_number, reps: s.reps, weight: s.weight,
-      completed: s.completed, completed_at: s.completed_at, rest_seconds: s.rest_seconds
+      id: s.id,
+      set_number: s.set_number,
+      set_type: s.set_type,
+      reps: s.reps,
+      weight: s.weight,
+      completed: s.completed,
+      completed_at: s.completed_at,
+      rest_seconds: s.rest_seconds,
     });
   }
 
   return { ...session, exercises: Array.from(exerciseMap.values()) };
 }
 
-export async function updateSessionSet(setId: number, reps: number | null, weight: number) {
-  const db = await getDb();
-  await db.runAsync('UPDATE session_sets SET reps = ?, weight = ? WHERE id = ?', [reps, weight, setId]);
-}
-
-export async function toggleSessionSetComplete(setId: number, completed: boolean) {
+export async function updateSessionSet(
+  setId: number,
+  reps: number | null,
+  weight: number,
+  setType: SessionSetType = "reps",
+) {
   const db = await getDb();
   await db.runAsync(
-    'UPDATE session_sets SET completed = ?, completed_at = ? WHERE id = ?',
-    [completed ? 1 : 0, completed ? new Date().toISOString() : null, setId]
+    "UPDATE session_sets SET set_type = ?, reps = ?, weight = ? WHERE id = ?",
+    [setType, reps, weight, setId],
   );
 }
 
-export async function finishSession(sessionId: number, status: 'completed' | 'aborted') {
+export async function toggleSessionSetComplete(
+  setId: number,
+  completed: boolean,
+) {
+  const db = await getDb();
+  await db.runAsync(
+    "UPDATE session_sets SET completed = ?, completed_at = ? WHERE id = ?",
+    [completed ? 1 : 0, completed ? new Date().toISOString() : null, setId],
+  );
+}
+
+export async function finishSession(
+  sessionId: number,
+  status: "completed" | "aborted",
+) {
   const db = await getDb();
   await db.runAsync(
     "UPDATE sessions SET status = ?, finished_at = datetime('now') WHERE id = ?",
-    [status, sessionId]
+    [status, sessionId],
   );
 }
 
@@ -131,14 +165,16 @@ export async function getActiveSession(): Promise<ActiveSession | null> {
 // ── History per journey ──────────────────────────────────────────
 export type JourneySession = {
   id: number;
-  status: 'completed' | 'aborted' | 'in_progress';
+  status: "completed" | "aborted" | "in_progress";
   started_at: string | null;
   workout_name: string;
   sets_done: number;
   volume: number;
 };
 
-export async function getSessionsByJourney(journeyId: number): Promise<JourneySession[]> {
+export async function getSessionsByJourney(
+  journeyId: number,
+): Promise<JourneySession[]> {
   const db = await getDb();
   return db.getAllAsync<JourneySession>(
     `SELECT s.id, s.status, s.started_at, w.name AS workout_name,
@@ -154,12 +190,11 @@ export async function getSessionsByJourney(journeyId: number): Promise<JourneySe
   );
 }
 
-
 // ── Delete session (history cleanup) ─────────────────────────────
 export async function deleteSession(sessionId: number) {
   const db = await getDb();
   // session_sets cascade deletes automatically due to ON DELETE CASCADE
-  await db.runAsync('DELETE FROM sessions WHERE id = ?', [sessionId]);
+  await db.runAsync("DELETE FROM sessions WHERE id = ?", [sessionId]);
 }
 
 // ── Last session for a workout (replay detection) ────────────────
@@ -171,7 +206,9 @@ export type LastSession = {
   sets_done: number;
 };
 
-export async function getLastSessionForWorkout(workoutId: number): Promise<LastSession | null> {
+export async function getLastSessionForWorkout(
+  workoutId: number,
+): Promise<LastSession | null> {
   const db = await getDb();
   return db.getFirstAsync<LastSession>(
     `SELECT s.id, s.status, s.started_at,
@@ -226,7 +263,7 @@ export async function getActiveSessionForWorkout(
 // ── All sessions with names (Calendar page) ──────────────────────
 export type SessionWithNames = {
   id: number;
-  status: 'completed' | 'aborted' | 'in_progress';
+  status: "completed" | "aborted" | "in_progress";
   started_at: string | null;
   workout_name: string;
   journey_name: string;

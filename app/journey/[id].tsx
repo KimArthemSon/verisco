@@ -1,5 +1,5 @@
-import { LinearGradient } from "expo-linear-gradient";
 import { dialog } from "@core/ui/dialogStore";
+import { Section } from "@core/ui/Section";
 import { palette, useTheme } from "@core/ui/theme";
 import { daysBetween, todayISO } from "@core/utils/dates";
 import { pickJourneyPhoto, takeJourneyPhoto } from "@core/utils/media";
@@ -20,17 +20,17 @@ import {
   useTodayWorkouts,
 } from "@modules/session-player/useSessionPlayer";
 import { useWorkoutsByJourney } from "@modules/workouts/useWorkouts";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import {
   CalendarDays,
   Camera,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Clock,
   Dumbbell,
   History,
-  Map,
+  Pencil,
   Play,
   Plus,
   Quote,
@@ -64,6 +64,7 @@ export default function JourneyDetailScreen() {
   const startSession = useStartSession();
   const deleteSession = useDeleteSession();
   const router = useRouter();
+  const navigation = useNavigation();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -78,6 +79,24 @@ export default function JourneyDetailScreen() {
     setAfterPhotoUri(journey.after_photo_uri ?? null);
     setCompletionNote(journey.completion_note ?? "");
   }, [journey?.id, journey?.after_photo_uri, journey?.completion_note]);
+
+  // header pencil → edit
+  useEffect(() => {
+    if (!journey) return;
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => router.push(`/journey/edit?id=${journey.id}`)}
+          style={[
+            styles.headerBtn,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <Pencil size={16} color={colors.text} />
+        </Pressable>
+      ),
+    });
+  }, [journey?.id, colors, navigation, router]);
 
   if (!journey)
     return <View style={[styles.root, { backgroundColor: colors.bg }]} />;
@@ -97,6 +116,12 @@ export default function JourneyDetailScreen() {
 
   const progressPct =
     total && total > 0 ? Math.min(100, Math.max(0, (dayX / total) * 100)) : 0;
+
+  const statusColor = completed
+    ? palette.green
+    : active
+      ? palette.green
+      : colors.subtext;
 
   const photoActions = () =>
     dialog.alert(
@@ -210,13 +235,10 @@ export default function JourneyDetailScreen() {
       { icon: Trash2 },
     );
 
-  const playWorkout = (workoutId: number) => {
-    setPreviewWorkoutId(workoutId);
-  };
+  const playWorkout = (workoutId: number) => setPreviewWorkoutId(workoutId);
 
   const confirmPlayWorkout = async () => {
     if (!previewWorkoutId) return;
-
     try {
       const activeSession = await getActiveSessionForWorkout(previewWorkoutId);
       if (activeSession) {
@@ -224,7 +246,6 @@ export default function JourneyDetailScreen() {
         router.push(`/session/${activeSession.id}`);
         return;
       }
-
       const lastSession = await getLastSessionForWorkout(previewWorkoutId);
       if (lastSession) {
         setPreviewWorkoutId(null);
@@ -279,18 +300,12 @@ export default function JourneyDetailScreen() {
     ? sessions
     : sessions?.slice(0, HISTORY_LIMIT);
 
-  const statusColor = completed
-    ? palette.green
-    : active
-      ? palette.green
-      : colors.subtext;
-
   return (
-    <>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { backgroundColor: colors.bg, paddingBottom: insets.bottom + 32 },
+          { paddingBottom: 170 + insets.bottom },
         ]}
       >
         {/* ─── Hero ─── */}
@@ -302,290 +317,254 @@ export default function JourneyDetailScreen() {
                 style={styles.heroImage}
               />
               <LinearGradient
-                colors={["transparent", "rgba(0,0,0,0.55)"]}
+                colors={["transparent", "rgba(0,0,0,0.45)"]}
                 style={styles.heroGradient}
               />
+              <View style={styles.cameraChip}>
+                <Camera size={14} color="#FFFFFF" />
+              </View>
             </View>
           ) : (
-            <LinearGradient
-              colors={["#2a2a2a", "#1a1a1a"]}
-              style={styles.heroEmpty}
+            <View
+              style={[
+                styles.heroEmpty,
+                { borderColor: colors.border, backgroundColor: colors.surface },
+              ]}
             >
               <View
                 style={[
                   styles.heroIconCircle,
-                  { backgroundColor: `${palette.green}18` },
+                  { backgroundColor: `${colors.accent}18` },
                 ]}
               >
-                <Map size={28} color={palette.green} />
+                <Camera size={24} color={colors.accent} />
               </View>
               <Text style={[styles.heroHint, { color: colors.subtext }]}>
-                Tap to add a photo
+                add your before photo
               </Text>
-            </LinearGradient>
+            </View>
           )}
         </Pressable>
 
-        {/* ─── Header ─── */}
-        <View style={styles.headerCol}>
-          <Text style={[styles.name, { color: colors.text }]}>
-            {journey.name}
-          </Text>
-          <View
-            style={[
-              styles.chip,
-              {
-                backgroundColor: `${statusColor}18`,
-                borderWidth: 1,
-                borderColor: `${statusColor}30`,
-              },
-            ]}
-          >
-            <Text style={[styles.chipText, { color: statusColor }]}>
-              {journey.status}
+        {/* ─── Title + Purpose side by side ─── */}
+        <View style={styles.titleRow}>
+          <View style={styles.titleCol}>
+            <Text style={[styles.name, { color: colors.text }]}>
+              {journey.name}
             </Text>
-          </View>
-        </View>
-
-        {/* ─── Quote ─── */}
-        {journey.purpose_quote ? (
-          <View
-            style={[
-              styles.quoteCard,
-              {
-                backgroundColor: colors.surface,
-                borderLeftColor: colors.accent,
-              },
-            ]}
-          >
-            <Quote size={16} color={colors.accent} style={{ marginBottom: 8 }} />
-            <Text style={[styles.quote, { color: colors.text }]}>
-              “{journey.purpose_quote}”
-            </Text>
-          </View>
-        ) : null}
-
-        {/* ─── Date / Progress ─── */}
-        <View
-          style={[
-            styles.dateCard,
-            {
-              backgroundColor: colors.surface,
-            },
-          ]}
-        >
-          <View
-            style={[
-              styles.iconCircle,
-              { backgroundColor: `${colors.accent}15` },
-            ]}
-          >
-            <CalendarDays size={18} color={colors.accent} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.datePrimary, { color: colors.text }]}>
-              {total ? `Day ${dayX} of ${total}` : `Day ${dayX}`}
-            </Text>
-            <Text style={[styles.dateSecondary, { color: colors.subtext }]}>
-              {journey.start_date} → {journey.end_date ?? "ongoing"}
-            </Text>
-            {total ? (
-              <View
-                style={[
-                  styles.progressTrack,
-                  { backgroundColor: colors.border },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      width: `${progressPct}%`,
-                      backgroundColor: palette.green,
-                    },
-                  ]}
-                />
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        {/* ─── Reflection ─── */}
-        {journey.completion_note && (
-          <View
-            style={[
-              styles.reflectionCard,
-              {
-                backgroundColor: colors.surface,
-                borderLeftColor: palette.green,
-              },
-            ]}
-          >
-            <View style={styles.reflectionHeader}>
-              <Quote size={14} color={palette.green} />
-              <Text
-                style={[styles.reflectionLabel, { color: colors.subtext }]}
-              >
-                REFLECTION
+            <View
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: `${statusColor}18`,
+                  borderWidth: 1,
+                  borderColor: `${statusColor}30`,
+                },
+              ]}
+            >
+              <Text style={[styles.chipText, { color: statusColor }]}>
+                {journey.status}
               </Text>
             </View>
-            <Text style={[styles.reflectionText, { color: colors.text }]}>
-              “{journey.completion_note}”
-            </Text>
           </View>
-        )}
-
-        {/* ─── Workouts ─── */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Workouts
-          </Text>
-          <Pressable
-            onPress={() =>
-              router.push(`/workout/create?journeyId=${journey.id}`)
-            }
-            style={[styles.addPill, { backgroundColor: colors.accent }]}
-          >
-            <Plus size={14} color="#FFFFFF" />
-            <Text style={styles.addPillText}>Add</Text>
-          </Pressable>
-        </View>
-
-        {sortedWorkouts.length === 0 && (
-          <Text style={[styles.emptyText, { color: colors.subtext }]}>
-            No workouts yet — add your first one
-          </Text>
-        )}
-
-        <View style={styles.listGap}>
-          {sortedWorkouts.map((w) => {
-            const isToday = todayWorkoutIds?.includes(w.id);
-            return (
+          {journey.purpose_quote ? (
+            <View style={styles.purposeWrap}>
               <View
-                key={w.id}
+                style={[styles.purposeBar, { backgroundColor: colors.accent }]}
+              />
+              <View
                 style={[
-                  styles.workoutCard,
-                  {
-                    backgroundColor: colors.surface,
-                    borderLeftColor: isToday ? palette.green : "transparent",
-                    borderLeftWidth: isToday ? 4 : 0,
-                  },
-                ]}
-              >
-                <Pressable
-                  onPress={() => router.push(`/workout/${w.id}`)}
-                  style={styles.workoutInfo}
-                >
-                  <View
-                    style={[
-                      styles.workoutIconCircle,
-                      {
-                        backgroundColor: isToday
-                          ? `${palette.green}18`
-                          : colors.border,
-                      },
-                    ]}
-                  >
-                    <Dumbbell
-                      size={16}
-                      color={isToday ? palette.green : colors.subtext}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={[
-                        styles.workoutName,
-                        { color: colors.text },
-                      ]}
-                    >
-                      {w.name}
-                    </Text>
-                    {isToday && (
-                      <View
-                        style={[
-                          styles.todayBadge,
-                          { backgroundColor: `${palette.green}18` },
-                        ]}
-                      >
-                        <Text style={styles.todayBadgeText}>TODAY</Text>
-                      </View>
-                    )}
-                  </View>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => playWorkout(w.id)}
-                  style={[
-                    styles.playCircle,
-                    { backgroundColor: palette.green },
-                  ]}
-                >
-                  <Play size={16} color="#FFFFFF" fill="#FFFFFF" />
-                </Pressable>
-              </View>
-            );
-          })}
-        </View>
-
-        {/* ─── Session History ─── */}
-        <View style={[styles.sectionHeader, { marginTop: 8 }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Session History
-          </Text>
-        </View>
-
-        {(!sessions || sessions.length === 0) && (
-          <Text style={[styles.emptyText, { color: colors.subtext }]}>
-            No sessions yet — play your first workout
-          </Text>
-        )}
-
-        <View style={styles.listGap}>
-          {visibleSessions?.map((s) => {
-            const done = s.status === "completed";
-            const aborted = s.status === "aborted";
-            return (
-              <Pressable
-                key={s.id}
-                onPress={() => router.push(`/session/${s.id}`)}
-                style={[
-                  styles.historyCard,
+                  styles.purposeContent,
                   { backgroundColor: colors.surface },
                 ]}
               >
+                <Quote size={14} color={colors.accent} />
+                <Text
+                  style={[styles.quote, { color: colors.text }]}
+                  numberOfLines={3}
+                >
+                  “{journey.purpose_quote}”
+                </Text>
+              </View>
+            </View>
+          ) : null}
+        </View>
+
+        {/* ─── Progress ── */}
+        <Section title="Progress">
+          <View style={styles.progressRow}>
+            <View
+              style={[
+                styles.iconTile,
+                { backgroundColor: `${colors.accent}15` },
+              ]}
+            >
+              <CalendarDays size={20} color={colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.datePrimary, { color: colors.text }]}>
+                {total ? `Day ${dayX} of ${total}` : `Day ${dayX}`}
+              </Text>
+              <Text style={[styles.dateSecondary, { color: colors.subtext }]}>
+                {journey.start_date} → {journey.end_date ?? "ongoing"}
+              </Text>
+              {total ? (
                 <View
                   style={[
-                    styles.statusDot,
-                    {
-                      backgroundColor: done
-                        ? palette.green
-                        : aborted
-                          ? "#B3261E"
-                          : colors.subtext,
-                    },
+                    styles.progressTrack,
+                    { backgroundColor: colors.border },
                   ]}
-                />
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text
-                    style={[styles.historyName, { color: colors.text }]}
-                  >
-                    {s.workout_name}
-                  </Text>
-                  <Text
-                    style={[styles.historySub, { color: colors.subtext }]}
-                  >
-                    {s.started_at?.slice(0, 10)} · {s.sets_done} sets ·{" "}
-                    {Math.round(s.volume).toLocaleString()} kg
-                  </Text>
+                >
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: `${progressPct}%`,
+                        backgroundColor: colors.accent,
+                      },
+                    ]}
+                  />
                 </View>
+              ) : null}
+            </View>
+          </View>
+        </Section>
 
-                <View style={styles.historyMeta}>
+        {/* ─── Workouts ─── */}
+        <Section>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Workouts
+            </Text>
+            <Pressable
+              onPress={() =>
+                router.push(`/workout/create?journeyId=${journey.id}`)
+              }
+              style={[styles.addPill, { backgroundColor: colors.accent }]}
+            >
+              <Plus size={14} color={palette.onAccent ?? "#FFFFFF"} />
+              <Text style={styles.addPillText}>Add</Text>
+            </Pressable>
+          </View>
+
+          {sortedWorkouts.length === 0 && (
+            <Text style={[styles.emptyText, { color: colors.subtext }]}>
+              No workouts yet — add your first one
+            </Text>
+          )}
+
+          <View style={styles.listGap}>
+            {sortedWorkouts.map((w) => {
+              const isToday = todayWorkoutIds?.includes(w.id);
+              return (
+                <View
+                  key={w.id}
+                  style={[
+                    styles.innerCard,
+                    { backgroundColor: colors.bg, borderColor: colors.border },
+                  ]}
+                >
+                  <Pressable
+                    onPress={() => router.push(`/workout/${w.id}`)}
+                    style={styles.workoutInfo}
+                  >
+                    <View
+                      style={[
+                        styles.workoutIconCircle,
+                        {
+                          backgroundColor: isToday
+                            ? `${colors.accent}18`
+                            : colors.border,
+                        },
+                      ]}
+                    >
+                      <Dumbbell
+                        size={16}
+                        color={isToday ? colors.accent : colors.subtext}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[styles.workoutName, { color: colors.text }]}
+                      >
+                        {w.name}
+                      </Text>
+                      {isToday && (
+                        <View
+                          style={[
+                            styles.todayBadge,
+                            { backgroundColor: `${colors.accent}18` },
+                          ]}
+                        >
+                          <Text style={styles.todayBadgeText}>TODAY</Text>
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => playWorkout(w.id)}
+                    style={[
+                      styles.playCircle,
+                      { backgroundColor: colors.accent },
+                    ]}
+                  >
+                    <Play size={16} color="#FFFFFF" fill="#FFFFFF" />
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+        </Section>
+
+        {/* ─── Session History ─── */}
+        <Section title="Session History">
+          {(!sessions || sessions.length === 0) && (
+            <Text style={[styles.emptyText, { color: colors.subtext }]}>
+              No sessions yet — play your first workout
+            </Text>
+          )}
+          <View style={styles.listGap}>
+            {visibleSessions?.map((s) => {
+              const done = s.status === "completed";
+              const aborted = s.status === "aborted";
+              return (
+                <Pressable
+                  key={s.id}
+                  onPress={() => router.push(`/session/${s.id}`)}
+                  style={[
+                    styles.innerCardRow,
+                    { backgroundColor: colors.bg, borderColor: colors.border },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.statusDot,
+                      {
+                        backgroundColor: done
+                          ? colors.accent
+                          : aborted
+                            ? "#B3261E"
+                            : colors.subtext,
+                      },
+                    ]}
+                  />
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[styles.historyName, { color: colors.text }]}>
+                      {s.workout_name}
+                    </Text>
+                    <Text
+                      style={[styles.historySub, { color: colors.subtext }]}
+                    >
+                      {s.started_at?.slice(0, 10)} · {s.sets_done} sets ·{" "}
+                      {Math.round(s.volume).toLocaleString()} kg
+                    </Text>
+                  </View>
                   <View
                     style={[
                       styles.statusPill,
                       {
                         backgroundColor: done
-                          ? `${palette.green}18`
+                          ? `${colors.accent}18`
                           : aborted
                             ? "#B3261E18"
                             : colors.border,
@@ -597,7 +576,7 @@ export default function JourneyDetailScreen() {
                         styles.statusPillText,
                         {
                           color: done
-                            ? palette.green
+                            ? colors.accent
                             : aborted
                               ? "#B3261E"
                               : colors.subtext,
@@ -614,56 +593,71 @@ export default function JourneyDetailScreen() {
                   >
                     <Trash2 size={15} color="#B3261E" opacity={0.8} />
                   </Pressable>
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
+                </Pressable>
+              );
+            })}
+          </View>
+          {(sessions?.length ?? 0) > HISTORY_LIMIT && (
+            <Pressable
+              onPress={() => setShowAllSessions(!showAllSessions)}
+              style={styles.showMoreBtn}
+            >
+              {showAllSessions ? (
+                <ChevronUp size={16} color={colors.accent} />
+              ) : (
+                <ChevronDown size={16} color={colors.accent} />
+              )}
+              <Text style={[styles.showMoreText, { color: colors.accent }]}>
+                {showAllSessions
+                  ? "Show less"
+                  : `Show all (${sessions!.length})`}
+              </Text>
+            </Pressable>
+          )}
+        </Section>
 
-        {(sessions?.length ?? 0) > HISTORY_LIMIT && (
-          <Pressable
-            onPress={() => setShowAllSessions(!showAllSessions)}
-            style={styles.showMoreBtn}
-          >
-            {showAllSessions ? (
-              <ChevronUp size={16} color={palette.green} />
-            ) : (
-              <ChevronDown size={16} color={palette.green} />
-            )}
-            <Text style={styles.showMoreText}>
-              {showAllSessions ? "Show Less" : `Show All (${sessions!.length})`}
+        {/* ─── Reflection ─── */}
+        {journey.completion_note && (
+          <Section title="Reflection">
+            <Text style={[styles.reflectionText, { color: colors.text }]}>
+              “{journey.completion_note}”
             </Text>
-          </Pressable>
+          </Section>
         )}
+      </ScrollView>
 
-        {/* ─── Bottom Actions ─── */}
-        <View style={{ height: 8 }} />
-
+      {/* ─── Pinned bottom actions ─── */}
+      <View
+        style={[
+          styles.pinnedBar,
+          {
+            backgroundColor: colors.bg,
+            borderTopColor: colors.border,
+            paddingBottom: insets.bottom + 12,
+          },
+        ]}
+      >
         {active ? (
-          <View style={styles.bottomActions}>
+          <View style={styles.pinnedRow}>
             <Pressable
               onPress={openCompleteSheet}
-              style={[
-                styles.completeAction,
-                { backgroundColor: colors.accent },
-              ]}
+              style={[styles.completeBtn, { backgroundColor: colors.accent }]}
             >
               <CheckCircle2 size={18} color="#FFFFFF" />
-              <Text style={styles.completeActionText}>Mark as completed</Text>
+              <Text style={styles.completeBtnText}>Mark as completed</Text>
             </Pressable>
-
-            <Pressable onPress={destroy} style={styles.deleteGhost}>
+            <Pressable onPress={destroy} style={styles.deleteBtn}>
               <Trash2 size={16} color="#B3261E" />
-              <Text style={styles.deleteGhostText}>Delete</Text>
+              <Text style={styles.deleteBtnText}>Delete</Text>
             </Pressable>
           </View>
         ) : (
-          <Pressable onPress={destroy} style={styles.deleteGhostWide}>
+          <Pressable onPress={destroy} style={[styles.deleteBtn, { flex: 1 }]}>
             <Trash2 size={16} color="#B3261E" />
-            <Text style={styles.deleteGhostText}>Delete journey</Text>
+            <Text style={styles.deleteBtnText}>Delete journey</Text>
           </Pressable>
         )}
-      </ScrollView>
+      </View>
 
       <SessionPreviewModal
         open={previewWorkoutId !== null}
@@ -689,7 +683,7 @@ export default function JourneyDetailScreen() {
               style={[styles.dragHandle, { backgroundColor: colors.border }]}
             />
             <Text style={[styles.sheetTitle, { color: colors.text }]}>
-              Complete "{journey.name}"
+              Complete “{journey.name}”
             </Text>
 
             <Pressable
@@ -764,7 +758,6 @@ export default function JourneyDetailScreen() {
                   Not yet
                 </Text>
               </Pressable>
-
               <Pressable
                 onPress={confirmComplete}
                 disabled={update.isPending}
@@ -782,72 +775,72 @@ export default function JourneyDetailScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: {
-    padding: 20,
-    gap: 0,
-    paddingTop: 16,
+  content: { padding: 20, gap: 16 },
+
+  headerBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   /* Hero */
   heroWrap: {
     width: "100%",
-    height: 260,
-    borderRadius: 24,
+    height: 200,
+    borderRadius: 20,
     overflow: "hidden",
-    marginBottom: 20,
   },
-  heroImageWrap: {
-    width: "100%",
-    height: "100%",
-  },
-  heroImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover",
-  },
+  heroImageWrap: { width: "100%", height: "100%" },
+  heroImage: { width: "100%", height: "100%", resizeMode: "cover" },
   heroGradient: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    height: 100,
+    height: 80,
+  },
+  cameraChip: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   heroEmpty: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 12,
+    gap: 10,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderRadius: 20,
   },
   heroIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
   },
-  heroHint: {
-    fontSize: 13,
-    fontWeight: "500",
-    letterSpacing: 0.3,
-  },
+  heroHint: { fontSize: 12, fontWeight: "600" },
 
-  /* Header */
-  headerCol: {
-    gap: 8,
-    marginBottom: 16,
-  },
-  name: {
-    fontSize: 30,
-    fontWeight: "800",
-    letterSpacing: -0.5,
-    lineHeight: 36,
-  },
+  /* Title + purpose */
+  titleRow: { flexDirection: "row", gap: 12, alignItems: "stretch" },
+  titleCol: { gap: 8, justifyContent: "center" },
+  name: { fontSize: 24, fontWeight: "800", letterSpacing: -0.5 },
   chip: {
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -860,110 +853,72 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: "uppercase",
   },
-
-  /* Quote */
-  quoteCard: {
-    borderRadius: 16,
-    padding: 18,
-    borderLeftWidth: 4,
-    marginBottom: 16,
-  },
-  quote: {
-    fontSize: 15,
-    fontStyle: "italic",
-    lineHeight: 24,
-    fontWeight: "500",
-  },
-
-  /* Date / Progress */
-  dateCard: {
+  purposeWrap: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: "hidden",
     flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
   },
-  iconCircle: {
+  purposeBar: { width: 3 },
+  purposeContent: {
+    flex: 1,
+    padding: 12,
+    gap: 6,
+  },
+  quote: { fontSize: 13, fontStyle: "italic", lineHeight: 19 },
+
+  /* Progress */
+  progressRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  iconTile: {
     width: 44,
     height: 44,
-    borderRadius: 14,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  datePrimary: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  dateSecondary: {
-    fontSize: 12,
-    fontWeight: "500",
-    marginBottom: 10,
-  },
+  datePrimary: { fontSize: 16, fontWeight: "700", marginBottom: 2 },
+  dateSecondary: { fontSize: 12, fontWeight: "500", marginBottom: 8 },
   progressTrack: {
     height: 5,
     borderRadius: 3,
     overflow: "hidden",
     width: "100%",
   },
-  progressFill: {
-    height: "100%",
-    borderRadius: 3,
-  },
-
-  /* Reflection */
-  reflectionCard: {
-    borderRadius: 16,
-    padding: 18,
-    borderLeftWidth: 4,
-    marginBottom: 16,
-  },
-  reflectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 10,
-  },
-  reflectionLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1.5,
-  },
-  reflectionText: {
-    fontSize: 15,
-    fontStyle: "italic",
-    lineHeight: 24,
-    fontWeight: "500",
-  },
+  progressFill: { height: "100%", borderRadius: 3 },
 
   /* Sections */
-  sectionHeader: {
+  sectionHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 14,
-    marginTop: 8,
+    marginBottom: 12,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: -0.3,
-  },
-  emptyText: {
-    fontSize: 13,
-    fontWeight: "500",
-    marginBottom: 8,
-  },
-  listGap: {
-    gap: 10,
-  },
-
-  /* Workouts */
-  workoutCard: {
+  sectionTitle: { fontSize: 16, fontWeight: "700" },
+  addPill: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 16,
+    gap: 6,
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+  },
+  addPillText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
+  emptyText: { fontSize: 13, fontWeight: "500" },
+  listGap: { gap: 10 },
+
+  innerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+  },
+  innerCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
     padding: 14,
   },
   workoutInfo: {
@@ -979,11 +934,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  workoutName: {
-    fontSize: 15,
-    fontWeight: "600",
-    letterSpacing: -0.2,
-  },
+  workoutName: { fontSize: 15, fontWeight: "600" },
   todayBadge: {
     alignSelf: "flex-start",
     paddingHorizontal: 8,
@@ -1003,56 +954,18 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+    marginLeft: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 5,
     elevation: 4,
-    marginLeft: 8,
-  },
-  addPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    height: 34,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-  },
-  addPillText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
   },
 
   /* History */
-  historyCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderRadius: 16,
-    padding: 14,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 1,
-  },
-  historyName: {
-    fontSize: 14,
-    fontWeight: "600",
-    letterSpacing: -0.2,
-  },
-  historySub: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  historyMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginLeft: 8,
-  },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  historyName: { fontSize: 14, fontWeight: "600" },
+  historySub: { fontSize: 12, fontWeight: "500" },
   statusPill: {
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -1064,87 +977,67 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: "uppercase",
   },
-  deleteHit: {
-    padding: 4,
-  },
+  deleteHit: { padding: 4 },
   showMoreBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 14,
-    marginTop: 4,
+    paddingVertical: 12,
   },
-  showMoreText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: palette.green,
-  },
+  showMoreText: { fontSize: 13, fontWeight: "600" },
 
-  /* Bottom Actions */
-  bottomActions: {
-    gap: 10,
-    marginTop: 24,
+  reflectionText: { fontSize: 15, fontStyle: "italic", lineHeight: 24 },
+
+  /* Pinned bar */
+  pinnedBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
   },
-  completeAction: {
+  pinnedRow: { flexDirection: "row", gap: 10 },
+  completeBtn: {
+    flex: 1,
     flexDirection: "row",
     gap: 10,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 18,
-    height: 56,
+    borderRadius: 16,
+    height: 52,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 5,
   },
-  completeActionText: {
+  completeBtnText: {
     color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 15,
-    letterSpacing: -0.2,
   },
-  deleteGhost: {
+  deleteBtn: {
     flexDirection: "row",
     gap: 8,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 18,
-    height: 48,
+    borderRadius: 16,
+    height: 52,
     borderWidth: 1,
-    borderColor: "#B3261E40",
-    backgroundColor: "transparent",
+    borderColor: "#B3261E",
+    paddingHorizontal: 18,
   },
-  deleteGhostWide: {
-    flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    height: 48,
-    borderWidth: 1,
-    borderColor: "#B3261E40",
-    backgroundColor: "transparent",
-    marginTop: 24,
-  },
-  deleteGhostText: {
-    color: "#B3261E",
-    fontWeight: "700",
-    fontSize: 14,
-  },
+  deleteBtnText: { color: "#B3261E", fontWeight: "700", fontSize: 14 },
 
   /* Sheet */
   sheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.55)",
   },
-  sheetWrap: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
+  sheetWrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
   sheet: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -1159,12 +1052,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 18,
   },
-  sheetTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    marginBottom: 20,
-    letterSpacing: -0.4,
-  },
+  sheetTitle: { fontSize: 22, fontWeight: "800", marginBottom: 20 },
   photoTile: {
     height: 170,
     borderRadius: 20,
@@ -1182,20 +1070,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  photoTileText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  photoImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "cover",
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: "600",
-    marginBottom: 10,
-  },
+  photoTileText: { fontSize: 13, fontWeight: "600" },
+  photoImage: { width: "100%", height: "100%", resizeMode: "cover" },
+  label: { fontSize: 15, fontWeight: "600", marginBottom: 10 },
   input: {
     minHeight: 130,
     maxHeight: 200,
@@ -1207,10 +1084,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 20,
   },
-  sheetActions: {
-    flexDirection: "row",
-    gap: 10,
-  },
+  sheetActions: { flexDirection: "row", gap: 10 },
   secondaryAction: {
     flex: 1,
     borderWidth: 1,
@@ -1219,11 +1093,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  secondaryActionText: {
-    fontWeight: "700",
-    fontSize: 15,
-    letterSpacing: -0.2,
-  },
+  secondaryActionText: { fontWeight: "700", fontSize: 15 },
   primaryAction: {
     flex: 1.4,
     flexDirection: "row",
@@ -1234,10 +1104,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryActionText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-    fontSize: 15,
-    letterSpacing: -0.2,
-  },
+  primaryActionText: { color: "#FFFFFF", fontWeight: "700", fontSize: 15 },
 });

@@ -88,6 +88,7 @@ export default function CreateWorkoutScreen() {
         name: we.exercise_name,
         muscle_group: we.exercise_muscle_group,
         sets: we.sets.map((s) => ({
+          set_type: s.set_type ?? "reps",
           reps: s.reps,
           weight: s.weight,
           rest_seconds: s.rest_seconds,
@@ -117,6 +118,7 @@ export default function CreateWorkoutScreen() {
           name: we.exercise_name,
           muscle_group: we.exercise_muscle_group,
           sets: we.sets.map((s) => ({
+            set_type: s.set_type ?? "reps",
             reps: s.reps,
             weight: s.weight,
             rest_seconds: s.rest_seconds,
@@ -280,8 +282,15 @@ export default function CreateWorkoutScreen() {
 
               {expanded === e.exercise_id && (
                 <View style={styles.setsWrap}>
+                  {/* header row */}
                   <View style={styles.setRow}>
-                    <Text style={[styles.setHead, { color: colors.subtext }]}>
+                    <Text
+                      style={[
+                        styles.setHead,
+                        styles.setNum,
+                        { color: colors.subtext },
+                      ]}
+                    >
                       #
                     </Text>
                     <Text
@@ -291,7 +300,16 @@ export default function CreateWorkoutScreen() {
                         { color: colors.subtext },
                       ]}
                     >
-                      reps
+                      type
+                    </Text>
+                    <Text
+                      style={[
+                        styles.setHead,
+                        styles.setInput,
+                        { color: colors.subtext },
+                      ]}
+                    >
+                      value
                     </Text>
                     <Text
                       style={[
@@ -311,13 +329,41 @@ export default function CreateWorkoutScreen() {
                     >
                       rest s
                     </Text>
-                    <View style={{ width: 14 }} />
+                    <View style={{ width: 32 }} />
                   </View>
+
+                  {/* set rows */}
                   {e.sets.map((st, i) => (
                     <View key={i} style={styles.setRow}>
                       <Text style={[styles.setNum, { color: colors.subtext }]}>
                         {i + 1}
                       </Text>
+
+                      <Pressable
+                        onPress={() =>
+                          draft.updateSet(e.exercise_id, i, {
+                            set_type: st.set_type === "time" ? "reps" : "time",
+                            ...(st.set_type === "time" ? { weight: 0 } : {}),
+                          })
+                        }
+                        style={[
+                          styles.typePill,
+                          {
+                            backgroundColor:
+                              st.set_type === "time"
+                                ? colors.accent + "1A"
+                                : colors.surface,
+                            borderColor: colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.typePillText, { color: colors.text }]}
+                        >
+                          {st.set_type === "time" ? "Hold" : "Reps"}
+                        </Text>
+                      </Pressable>
+
                       <TextInput
                         style={[
                           styles.setInput,
@@ -329,7 +375,7 @@ export default function CreateWorkoutScreen() {
                         ]}
                         keyboardType="number-pad"
                         value={st.reps?.toString() ?? ""}
-                        placeholder="8"
+                        placeholder={st.set_type === "time" ? "30" : "8"}
                         placeholderTextColor={colors.subtext}
                         onChangeText={(t) =>
                           draft.updateSet(e.exercise_id, i, {
@@ -337,25 +383,31 @@ export default function CreateWorkoutScreen() {
                           })
                         }
                       />
-                      <TextInput
-                        style={[
-                          styles.setInput,
-                          {
-                            backgroundColor: colors.bg,
-                            color: colors.text,
-                            borderColor: colors.border,
-                          },
-                        ]}
-                        keyboardType="number-pad"
-                        value={st.weight.toString()}
-                        placeholder="0"
-                        placeholderTextColor={colors.subtext}
-                        onChangeText={(t) =>
-                          draft.updateSet(e.exercise_id, i, {
-                            weight: Number(t) || 0,
-                          })
-                        }
-                      />
+
+                      {st.set_type === "reps" ? (
+                        <TextInput
+                          style={[
+                            styles.setInput,
+                            {
+                              backgroundColor: colors.bg,
+                              color: colors.text,
+                              borderColor: colors.border,
+                            },
+                          ]}
+                          keyboardType="number-pad"
+                          value={st.weight.toString()}
+                          placeholder="0"
+                          placeholderTextColor={colors.subtext}
+                          onChangeText={(t) =>
+                            draft.updateSet(e.exercise_id, i, {
+                              weight: Number(t) || 0,
+                            })
+                          }
+                        />
+                      ) : (
+                        <View style={styles.setInputSpacer} />
+                      )}
+
                       <TextInput
                         style={[
                           styles.setInput,
@@ -375,14 +427,27 @@ export default function CreateWorkoutScreen() {
                           })
                         }
                       />
+
+                      {/* delete set */}
                       <Pressable
-                        hitSlop={8}
+                        hitSlop={10}
+                        disabled={e.sets.length <= 1}
                         onPress={() => draft.removeSet(e.exercise_id, i)}
+                        style={[
+                          styles.deleteSetBtn,
+                          e.sets.length <= 1 && styles.deleteSetDisabled,
+                        ]}
                       >
-                        <Trash2 size={14} color={colors.subtext} />
+                        <Trash2
+                          size={14}
+                          color={
+                            e.sets.length <= 1 ? colors.subtext : "#B3261E"
+                          }
+                        />
                       </Pressable>
                     </View>
                   ))}
+
                   <Pressable
                     onPress={() => draft.addSet(e.exercise_id)}
                     style={styles.addSet}
@@ -509,7 +574,9 @@ export default function CreateWorkoutScreen() {
                   if (Platform.OS === "android") setShowTime(false);
                   if (d)
                     setTime(
-                      `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`,
+                      `${String(d.getHours()).padStart(2, "0")}:${String(
+                        d.getMinutes(),
+                      ).padStart(2, "0")}`,
                     );
                 }}
               />
@@ -590,18 +657,38 @@ const styles = StyleSheet.create({
   exName: { fontSize: 15, fontWeight: "600" },
   exSub: { fontSize: 12 },
   setsWrap: { paddingHorizontal: 14, paddingBottom: 14, gap: 6 },
-  setRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  setRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   setHead: { fontSize: 11, fontWeight: "700" },
-  setNum: { width: 12, fontSize: 13 },
+  setNum: { width: 16, fontSize: 12, fontWeight: "600" },
+  typePill: {
+    flex: 1,
+    minWidth: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  typePillText: { fontSize: 10, fontWeight: "700" },
   setInput: {
-    width: 56,
+    flex: 1,
+    minWidth: 40,
     borderRadius: 10,
     borderWidth: 1,
     padding: 8,
     fontSize: 13,
     textAlign: "center",
   },
+  setInputSpacer: { flex: 1, minWidth: 40 },
   addSet: { flexDirection: "row", gap: 6, alignItems: "center", marginTop: 4 },
+  deleteSetBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#B3261E15",
+  },
+  deleteSetDisabled: { opacity: 0.3, backgroundColor: "transparent" },
   addSetText: { color: palette.green, fontSize: 12, fontWeight: "700" },
   addExBtn: {
     flexDirection: "row",

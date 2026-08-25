@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS workout_sets (
   workout_exercise_id INTEGER NOT NULL
                       REFERENCES workout_exercises(id) ON DELETE CASCADE,
   set_number   INTEGER NOT NULL,
+  set_type     TEXT DEFAULT 'reps'
+               CHECK(set_type IN ('reps','time')),
   reps         INTEGER,
   weight       REAL DEFAULT 0,
   rest_seconds INTEGER DEFAULT 60
@@ -86,6 +88,8 @@ CREATE TABLE IF NOT EXISTS session_sets (
   session_id   INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   exercise_id  INTEGER NOT NULL REFERENCES exercises(id),
   set_number   INTEGER NOT NULL,
+  set_type     TEXT DEFAULT 'reps'
+               CHECK(set_type IN ('reps','time')),
   reps         INTEGER,
   weight       REAL DEFAULT 0,
   completed    INTEGER DEFAULT 0,

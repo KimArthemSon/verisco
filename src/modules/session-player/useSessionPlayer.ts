@@ -47,8 +47,12 @@ export function useStartSession() {
 export function useUpdateSessionSet() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { setId: number; reps: number | null; weight: number }) =>
-      updateSessionSet(v.setId, v.reps, v.weight),
+    mutationFn: (v: {
+      setId: number;
+      reps: number | null;
+      weight: number;
+      setType?: "reps" | "time";
+    }) => updateSessionSet(v.setId, v.reps, v.weight, v.setType ?? "reps"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["session"] }),
   });
 }

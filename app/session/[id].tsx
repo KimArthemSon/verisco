@@ -155,6 +155,7 @@ export default function SessionScreen() {
 
   const currentEx = session.exercises[store.currentExerciseIndex];
   const currentSet = currentEx?.sets[store.currentSetIndex];
+  const currentSetIsTimed = currentSet?.set_type === "time";
 
   const isReadOnly = session.status !== "in_progress";
   const wasCompleted = session.status === "completed";
@@ -370,17 +371,19 @@ export default function SessionScreen() {
                         { color: colors.subtext },
                       ]}
                     >
-                      Reps
+                      {currentSetIsTimed ? "Secs" : "Reps"}
                     </Text>
-                    <Text
-                      style={[
-                        styles.setHead,
-                        styles.setInput,
-                        { color: colors.subtext },
-                      ]}
-                    >
-                      Weight
-                    </Text>
+                    {!currentSetIsTimed && (
+                      <Text
+                        style={[
+                          styles.setHead,
+                          styles.setInput,
+                          { color: colors.subtext },
+                        ]}
+                      >
+                        Weight
+                      </Text>
+                    )}
                     <View style={{ width: 24 }} />
                   </View>
 
@@ -428,7 +431,9 @@ export default function SessionScreen() {
                                 { color: colors.accent },
                               ]}
                             >
-                              {s.reps ?? "-"}
+                              {s.set_type === "time"
+                                ? `${s.reps ?? 0}s`
+                                : (s.reps ?? "-")}
                             </Text>
                           </Pressable>
                         ) : (
@@ -449,6 +454,7 @@ export default function SessionScreen() {
                                 setId: s.id,
                                 reps: t === "" ? null : Number(t),
                                 weight: s.weight,
+                                setType: s.set_type ?? "reps",
                               })
                             }
                           />
@@ -473,9 +479,15 @@ export default function SessionScreen() {
                                 { color: colors.accent },
                               ]}
                             >
-                              {s.weight === 0 ? "BW" : `${s.weight}`}
+                              {s.set_type === "time"
+                                ? "—"
+                                : s.weight === 0
+                                  ? "BW"
+                                  : `${s.weight}`}
                             </Text>
                           </Pressable>
+                        ) : s.set_type === "time" ? (
+                          <View style={styles.setInputSpacer} />
                         ) : (
                           <TextInput
                             style={[
@@ -494,6 +506,7 @@ export default function SessionScreen() {
                                 setId: s.id,
                                 reps: s.reps,
                                 weight: Number(t) || 0,
+                                setType: s.set_type ?? "reps",
                               })
                             }
                           />
@@ -528,7 +541,9 @@ export default function SessionScreen() {
                     <Text
                       style={[styles.restHintText, { color: colors.subtext }]}
                     >
-                      {currentSet.rest_seconds}s rest after this set
+                      {currentSet.set_type === "time"
+                        ? `Hold ${currentSet.reps ?? 0}s • rest ${currentSet.rest_seconds}s after`
+                        : `${currentSet.rest_seconds}s rest after this set`}
                     </Text>
                   </View>
                 )}
@@ -709,8 +724,9 @@ export default function SessionScreen() {
                             { color: colors.subtext },
                           ]}
                         >
-                          Set {s.set_number}: {s.reps ?? "—"} ×{" "}
-                          {s.weight === 0 ? "BW" : `${s.weight} kg`}
+                          {s.set_type === "time"
+                            ? `Set ${s.set_number}: ${s.reps ?? 0}s hold`
+                            : `Set ${s.set_number}: ${s.reps ?? "—"} × ${s.weight === 0 ? "BW" : `${s.weight} kg`}`}
                         </Text>
                       </View>
                     ))}
@@ -881,6 +897,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "center",
     textAlignVertical: "center",
+  },
+  setInputSpacer: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
   },
   completedChip: {
     borderWidth: 1,

@@ -1,9 +1,12 @@
 import { getDb } from "@core/db";
 
+export type SetType = "reps" | "time";
+
 export type WorkoutSet = {
   id: number;
   workout_exercise_id: number;
   set_number: number;
+  set_type: SetType;
   reps: number | null;
   weight: number;
   rest_seconds: number;
@@ -38,7 +41,12 @@ export type WorkoutInput = {
   is_template?: boolean;
   exercises: {
     exercise_id: number;
-    sets: { reps?: number | null; weight?: number; rest_seconds?: number }[];
+    sets: {
+      set_type?: SetType;
+      reps?: number | null;
+      weight?: number;
+      rest_seconds?: number;
+    }[];
   }[];
 };
 
@@ -115,10 +123,11 @@ export async function createWorkout(input: WorkoutInput) {
     for (let s = 0; s < ex.sets.length; s++) {
       const set = ex.sets[s];
       await db.runAsync(
-        "INSERT INTO workout_sets (workout_exercise_id, set_number, reps, weight, rest_seconds) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO workout_sets (workout_exercise_id, set_number, set_type, reps, weight, rest_seconds) VALUES (?, ?, ?, ?, ?, ?)",
         [
           weId,
           s + 1,
+          set.set_type ?? "reps",
           set.reps ?? null,
           set.weight ?? 0,
           set.rest_seconds ?? 60,
@@ -147,6 +156,7 @@ export async function promoteToTemplate(workoutId: number) {
     exercises: detail.exercises.map((we) => ({
       exercise_id: we.exercise_id,
       sets: we.sets.map((s) => ({
+        set_type: s.set_type,
         reps: s.reps,
         weight: s.weight,
         rest_seconds: s.rest_seconds,
@@ -170,10 +180,11 @@ async function insertExercises(
     for (let s = 0; s < ex.sets.length; s++) {
       const set = ex.sets[s];
       await db.runAsync(
-        "INSERT INTO workout_sets (workout_exercise_id, set_number, reps, weight, rest_seconds) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO workout_sets (workout_exercise_id, set_number, set_type, reps, weight, rest_seconds) VALUES (?, ?, ?, ?, ?, ?)",
         [
           weId,
           s + 1,
+          set.set_type ?? "reps",
           set.reps ?? null,
           set.weight ?? 0,
           set.rest_seconds ?? 60,

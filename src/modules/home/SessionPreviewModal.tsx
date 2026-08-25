@@ -1,4 +1,5 @@
 import { useTheme } from "@core/ui/theme";
+import { fmtSetSummary } from "@core/utils/format";
 import { useWorkout } from "@modules/workouts/useWorkouts";
 import { Play, X } from "lucide-react-native";
 import {
@@ -33,10 +34,8 @@ export function SessionPreviewModal({
   const firstSetSummary = (exercise: (typeof exercises)[number]) => {
     const first = exercise.sets[0];
     if (!first) return "0 sets";
-    const reps = first.reps ?? 0;
-    const weight = Number(first.weight ?? 0);
     const rest = first.rest_seconds ?? 0;
-    return `${exercise.sets.length} sets • ${reps}×${weight}kg • rest ${rest}s`;
+    return `${exercise.sets.length} sets • ${fmtSetSummary(first)} • rest ${rest}s`;
   };
 
   return (

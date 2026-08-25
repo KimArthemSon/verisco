@@ -19,6 +19,17 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       } catch {
         // Existing installs keep the legacy table shape; ignore duplicate-column errors.
       }
+
+      for (const table of ["workout_sets", "session_sets"]) {
+        try {
+          await db.execAsync(
+            `ALTER TABLE ${table} ADD COLUMN set_type TEXT DEFAULT 'reps'`,
+          );
+        } catch {
+          // Existing installs keep the legacy table shape; ignore duplicate-column errors.
+        }
+      }
+
       return db;
     })();
   }
